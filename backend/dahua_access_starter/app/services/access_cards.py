@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ctypes import POINTER, c_int, c_void_p, cast, pointer, sizeof
-from datetime import date
+from datetime import date, datetime
 from functools import wraps
 import threading
 from typing import Any, Callable
@@ -21,7 +21,13 @@ def _decode(raw: Any) -> str:
     if raw is None:
         return ""
     try:
-        return bytes(raw).split(b"\x00", 1)[0].decode("utf-8", "replace").strip()
+        value = bytes(raw).split(b"\x00", 1)[0]
+        for encoding in ("utf-8", "gbk"):
+            try:
+                return value.decode(encoding).strip()
+            except UnicodeDecodeError:
+                continue
+        return value.decode("utf-8", "replace").strip()
     except Exception:
         return str(raw).strip()
 
@@ -54,6 +60,24 @@ def _read_time(value: Any) -> date | None:
         return date(year, month, day)
     except Exception:
         return None
+
+
+def _read_datetime(value: Any) -> datetime | None:
+    try:
+        parts = (
+            int(value.dwYear), int(value.dwMonth), int(value.dwDay),
+            int(value.dwHour), int(value.dwMinute), int(value.dwSecond),
+        )
+        if not parts[0] or not parts[1] or not parts[2]:
+            return None
+        return datetime(*parts)
+    except Exception:
+        return None
+
+
+def _optional_text(value: Any) -> str | None:
+    result = _decode(value)
+    return result or None
 
 
 class DahuaAccessCardService:
@@ -115,6 +139,35 @@ class DahuaAccessCardService:
         except Exception as exc:
             raise AccessCardSDKError(
                 "Could not import the required access-card structures from your Dahua NetSDK wheel: "
+                f"{exc}"
+            ) from exc
+
+    def _user_imports(self):
+        try:
+            from NetSDK.SDK_Enum import EM_A_NET_EM_ACCESS_CTL_USER_SERVICE, EM_A_NET_ENUM_USER_TYPE
+            from NetSDK.SDK_Struct import (
+                NET_ACCESS_USER_INFO,
+                NET_ACCESS_USER_INFO_EX,
+                NET_ACCESS_USER_INFO_EX2,
+                NET_ACCESS_USER_INFO_EX3,
+                NET_FLOORS_INFO,
+                NET_IN_ACCESS_USER_SERVICE_GET,
+                NET_OUT_ACCESS_USER_SERVICE_GET,
+            )
+            return {
+                "UserService": EM_A_NET_EM_ACCESS_CTL_USER_SERVICE,
+                "UserType": EM_A_NET_ENUM_USER_TYPE,
+                "UserInfo": NET_ACCESS_USER_INFO,
+                "UserInfoEx": NET_ACCESS_USER_INFO_EX,
+                "UserInfoEx2": NET_ACCESS_USER_INFO_EX2,
+                "UserInfoEx3": NET_ACCESS_USER_INFO_EX3,
+                "FloorsInfo": NET_FLOORS_INFO,
+                "GetIn": NET_IN_ACCESS_USER_SERVICE_GET,
+                "GetOut": NET_OUT_ACCESS_USER_SERVICE_GET,
+            }
+        except Exception as exc:
+            raise AccessCardSDKError(
+                "Could not import Dahua access-personnel service structures from the installed NetSDK wheel: "
                 f"{exc}"
             ) from exc
 
@@ -223,17 +276,189 @@ class DahuaAccessCardService:
                         "card_status": int(row.emStatus),
                         "card_type": int(row.emType),
                         "is_valid": bool(row.bIsValid),
+                        "person_status": bool(row.bPersonStatus),
                         "valid_from": _read_time(row.stuValidStartTime),
                         "valid_until": _read_time(row.stuValidEndTime),
-                        "door_indices": [int(row.sznDoors[i]) for i in range(min(int(row.nDoorNum), 32))],
-                        "time_section_indices": [int(row.sznTimeSectionNo[i]) for i in range(min(int(row.nTimeSectionNum), 32))],
+                        "card_created_at": _read_datetime(row.stuCreateTime),
+                        "door_indices": [int(row.sznDoors[i]) for i in range(min(max(int(row.nDoorNum), 0), 32))],
+                        "time_section_indices": [int(row.sznTimeSectionNo[i]) for i in range(min(max(int(row.nTimeSectionNum), 0), 32))],
                         "device_user_id": _decode(row.szUserID) or None,
+                        # Never return szPsw or raw face templates. Only expose presence/count.
+                        "password_configured": bool(_decode(row.szPsw)),
+                        "times_used_limit": int(row.nUserTime),
+                        "first_enter": bool(row.bFirstEnter),
+                        "handicap_card": bool(row.bHandicap),
+                        "face_template_count": int(row.nFaceDataNum),
+                        "device_user_type": int(row.nUserType),
+                        "department_name": _optional_text(row.szSection),
+                        "company_name": _optional_text(row.szCompanyName),
+                        "department_id": int(row.nSectionID),
+                        "sex_code": int(row.emSex),
+                        "role": _optional_text(row.szRole),
+                        "phone_number": _optional_text(row.szPhoneNumber),
+                        "photo_path": _optional_text(row.szPhotoPath),
+                        "picture_id": _optional_text(row.szPictureID),
+                        "project_number": _optional_text(row.szProjectNo),
+                        "project_name": _optional_text(row.szProjectName),
+                        "worker_type_id": _optional_text(row.szWorkerTypeID),
+                        "worker_type_name": _optional_text(row.szWorkerTypeName),
                     })
                 if count < batch_size:
                     break
         finally:
             client.FindRecordClose(find_handle)
         return results
+
+    @staticmethod
+    def _serialize_device_user(info: Any, fail_code: int) -> dict[str, Any] | None:
+        returned_user_id = _decode(info.szUserID)
+        if not returned_user_id:
+            return None
+
+        # Newer Dahua structures can store the display name in szNameEx when
+        # bUseNameEx is enabled. Some firmware populates szNameEx without the
+        # flag, so retain a safe fallback to whichever field is non-empty.
+        standard_name = _optional_text(info.szName)
+        extended_name = _optional_text(info.szNameEx)
+        name_extension_enabled = bool(info.bUseNameEx)
+        if name_extension_enabled and extended_name:
+            display_name = extended_name
+            name_source = "szNameEx"
+        elif standard_name:
+            display_name = standard_name
+            name_source = "szName"
+        elif extended_name:
+            display_name = extended_name
+            name_source = "szNameEx_fallback"
+        else:
+            display_name = None
+            name_source = None
+
+        user_type = int(info.emUserType)
+        user_type_labels = {
+            0: "normal_user",
+            1: "blocklist_user",
+            2: "guest",
+            3: "patrol",
+            4: "vip",
+            5: "handicap",
+            6: "custom_1",
+            7: "custom_2",
+        }
+        user_status = int(info.nUserStatus)
+        return {
+            "user_id": returned_user_id,
+            "name": display_name,
+            "name_source": name_source,
+            "name_extension_enabled": name_extension_enabled,
+            "user_type": user_type,
+            "user_type_label": user_type_labels.get(user_type, "unknown"),
+            "user_status": user_status,
+            "user_status_label": {0: "normal", 1: "frozen"}.get(user_status, "unknown"),
+            "times_used_limit": int(info.nUserTime),
+            "times_used_label": (
+                "Unlimited" if user_type != 2 else str(int(info.nUserTime))
+            ),
+            "password_configured": bool(_decode(info.szPsw)),
+            "effective_from": _read_datetime(info.stuValidBeginTime),
+            "effective_until": _read_datetime(info.stuValidEndTime),
+            "door_indices": [int(info.nDoors[i]) for i in range(min(max(int(info.nDoorNum), 0), 32))],
+            "time_section_indices": [int(info.nTimeSectionNo[i]) for i in range(min(max(int(info.nTimeSectionNum), 0), 32))],
+            "special_day_schedule_indices": [int(info.nSpecialDaysSchedule[i]) for i in range(min(max(int(info.nSpecialDaysScheduleNum), 0), 128))],
+            "department": _optional_text(info.szDepartment),
+            "phone_number": _optional_text(info.szPhoneNumber),
+            "sex_code": int(info.emSex),
+            "birthday": _read_time(info.stuBirthDay),
+            "update_time": _read_datetime(info.stuUpdateTime),
+            "has_citizen_id": bool(_decode(info.szCitizenIDNo)),
+            "floor_numbers": _optional_text(info.szFloorNo),
+            "room_numbers": _optional_text(info.szRoomNo),
+            "class_info": _optional_text(info.szClassInfo),
+            "student_number": _optional_text(info.szStudentNo),
+            "work_class": _optional_text(info.szWorkClass),
+            "custom_user_type": int(info.nCustomUserType),
+            "custom_user_type_value": int(info.nCustomUserTypeValue),
+            "fail_code": int(fail_code),
+        }
+
+    @_per_device_serialized
+    def get_device_user_records(self, device_id: int, user_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Read Dahua personnel profiles in batches of up to 100 user IDs.
+
+        The SDK input structure stores 100 fixed 32-byte user-ID slots.
+        Batching avoids one native SDK call per employee/card.
+        """
+        from ctypes import POINTER, addressof, c_int, cast, memmove, pointer, sizeof
+
+        normalized_ids = list(dict.fromkeys(str(value).strip() for value in user_ids if str(value).strip()))
+        if not normalized_ids:
+            return {}
+        for value in normalized_ids:
+            if len(value.encode("utf-8")) > 31:
+                raise AccessCardSDKError(f"Device user ID {value!r} exceeds the 31-byte SDK limit.")
+
+        api = self._user_imports()
+        handle = self._session_handle(device_id)
+        UserInfo = api["UserInfo"]
+        result: dict[str, dict[str, Any]] = {}
+        client = self._device_sdk._client
+
+        for offset in range(0, len(normalized_ids), 100):
+            batch = normalized_ids[offset:offset + 100]
+            query = api["GetIn"]()
+            query.dwSize = sizeof(api["GetIn"])
+            query.nUserNum = len(batch)
+            packed_user_ids = b"".join(
+                item.encode("utf-8").ljust(32, b"\x00") for item in batch
+            )
+            # Use memmove because assigning a ctypes c_char array field from bytes
+            # truncates at the first NUL and would discard subsequent 32-byte slots.
+            memmove(
+                addressof(query) + api["GetIn"].szUserID.offset,
+                packed_user_ids,
+                len(packed_user_ids),
+            )
+
+            users = (UserInfo * len(batch))()
+            floors = [api["FloorsInfo"]() for _ in batch]
+            user_ex = [api["UserInfoEx"]() for _ in batch]
+            user_ex2 = [api["UserInfoEx2"]() for _ in batch]
+            user_ex3 = [api["UserInfoEx3"]() for _ in batch]
+            for index in range(len(batch)):
+                users[index].pstuFloorsEx2 = pointer(floors[index])
+                users[index].pstuUserInfoEx = pointer(user_ex[index])
+                users[index].pstuUserInfoEx2 = pointer(user_ex2[index])
+                users[index].pstuUserInfoEx3 = pointer(user_ex3[index])
+
+            fail_codes = (c_int * len(batch))()
+            output = api["GetOut"]()
+            output.dwSize = sizeof(api["GetOut"])
+            output.nMaxRetNum = len(batch)
+            output.pUserInfo = cast(users, POINTER(UserInfo))
+            output.pFailCode = cast(fail_codes, POINTER(c_int))
+
+            ok = client.OperateAccessUserService(
+                handle,
+                api["UserService"].NET_EM_ACCESS_CTL_USER_SERVICE_GET,
+                query,
+                output,
+                5000,
+            )
+            if not ok:
+                raise AccessCardSDKError(
+                    "Dahua personnel query failed: " + str(client.GetLastErrorMessage())
+                )
+
+            for index, requested_id in enumerate(batch):
+                profile = self._serialize_device_user(users[index], int(fail_codes[index]))
+                if profile is not None:
+                    result[requested_id] = profile
+        return result
+
+    def get_device_user_record(self, device_id: int, user_id: str) -> dict[str, Any] | None:
+        """Read one controller person record by device-side user ID."""
+        user_id = str(user_id).strip()
+        return self.get_device_user_records(device_id, [user_id]).get(user_id) if user_id else None
 
     @_per_device_serialized
     def add_device_card(self, device_id: int, *, card_number: str, card_name: str,

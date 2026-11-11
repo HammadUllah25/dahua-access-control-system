@@ -1,0 +1,156 @@
+=== NETCLIENT METHODS ===
+
+Method: GetLastError
+Signature: () -> int
+
+Method: GetLastErrorMessage
+Signature: () -> str
+
+Method: RealLoadPictureEx
+Signature: (lLoginID: ctypes.c_longlong, nChannelID: ctypes.c_long, dwAlarmType: ctypes.c_ulong, bNeedPicFile: ctypes.c_long, cbAnalyzerData: ctypes.WINFUNCTYPE.<locals>.WinFunctionType, dwUser: ctypes.c_longlong = 0, reserved: ctypes.c_void_p = None) -> ctypes.c_longlong
+
+Method: StopLoadPic
+Signature: (lAnalyzerHandle: ctypes.c_longlong) -> ctypes.c_long
+
+=== ACCESS EVENT ENUM ===
+EM_EVENT_IVS_TYPE ACCESS_CTL = 516
+SDK_ALARM_TYPE ALARM_ACCESS_CTL_EVENT = 12673
+SDK_ALARM_TYPE ALARM_ACCESS_CTL_STATUS = 12677
+EM_A_NET_EM_ACCESS_CTL_USER_SERVICE NET_EM_ACCESS_CTL_USER_SERVICE_INSERT = 0
+EM_A_NET_EM_ACCESS_CTL_USER_SERVICE NET_EM_ACCESS_CTL_USER_SERVICE_GET = 1
+EM_A_NET_EM_ACCESS_CTL_USER_SERVICE NET_EM_ACCESS_CTL_USER_SERVICE_REMOVE = 2
+EM_A_NET_EM_ACCESS_CTL_USER_SERVICE NET_EM_ACCESS_CTL_USER_SERVICE_CLEAR = 3
+EM_A_NET_EM_ACCESS_CTL_FACE_SERVICE NET_EM_ACCESS_CTL_FACE_SERVICE_INSERT = 0
+EM_A_NET_EM_ACCESS_CTL_FACE_SERVICE NET_EM_ACCESS_CTL_FACE_SERVICE_GET = 1
+EM_A_NET_EM_ACCESS_CTL_FACE_SERVICE NET_EM_ACCESS_CTL_FACE_SERVICE_UPDATE = 2
+EM_A_NET_EM_ACCESS_CTL_FACE_SERVICE NET_EM_ACCESS_CTL_FACE_SERVICE_REMOVE = 3
+EM_A_NET_EM_ACCESS_CTL_FACE_SERVICE NET_EM_ACCESS_CTL_FACE_SERVICE_CLEAR = 4
+EM_A_NET_EM_ACCESS_CTL_CARD_SERVICE NET_EM_ACCESS_CTL_CARD_SERVICE_INSERT = 0
+EM_A_NET_EM_ACCESS_CTL_CARD_SERVICE NET_EM_ACCESS_CTL_CARD_SERVICE_GET = 1
+EM_A_NET_EM_ACCESS_CTL_CARD_SERVICE NET_EM_ACCESS_CTL_CARD_SERVICE_UPDATE = 2
+EM_A_NET_EM_ACCESS_CTL_CARD_SERVICE NET_EM_ACCESS_CTL_CARD_SERVICE_REMOVE = 3
+EM_A_NET_EM_ACCESS_CTL_CARD_SERVICE NET_EM_ACCESS_CTL_CARD_SERVICE_CLEAR = 4
+EM_A_NET_ACCESS_CTL_EVENT_TYPE NET_ACCESS_CTL_EVENT_UNKNOWN = 0
+EM_A_NET_ACCESS_CTL_EVENT_TYPE NET_ACCESS_CTL_EVENT_ENTRY = 1
+EM_A_NET_ACCESS_CTL_EVENT_TYPE NET_ACCESS_CTL_EVENT_EXIT = 2
+EM_A_NET_ACCESS_CTL_STATUS_TYPE NET_ACCESS_CTL_STATUS_TYPE_UNKNOWN = 0
+EM_A_NET_ACCESS_CTL_STATUS_TYPE NET_ACCESS_CTL_STATUS_TYPE_OPEN = 1
+EM_A_NET_ACCESS_CTL_STATUS_TYPE NET_ACCESS_CTL_STATUS_TYPE_CLOSE = 2
+EM_A_NET_ACCESS_CTL_STATUS_TYPE NET_ACCESS_CTL_STATUS_TYPE_ABNORMAL = 3
+EM_A_NET_ACCESS_CTL_STATUS_TYPE NET_ACCESS_CTL_STATUS_TYPE_FAKELOCKED = 4
+EM_A_NET_ACCESS_CTL_STATUS_TYPE NET_ACCESS_CTL_STATUS_TYPE_CLOSEALWAYS = 5
+EM_A_NET_ACCESS_CTL_STATUS_TYPE NET_ACCESS_CTL_STATUS_TYPE_OPENALWAYS = 6
+EM_A_NET_ACCESS_CTL_STATUS_TYPE NET_ACCESS_CTL_STATUS_TYPE_NORMAL = 7
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_MANAGER_ADDDEVICE = 0
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_MANAGER_MODIFYDEVICE = 1
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_MANAGER_REMOVEDEVICE = 2
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_GETSUBCONTROLLER_INFO = 3
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_GETSUBCONTROLLER_STATE = 4
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_SET_REPEAT_ENTERROUTE = 5
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_GET_REPEAT_ENTERROUTE = 6
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_SET_ABLOCK_ROUTE = 7
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_GET_ABLOCK_ROUTE = 8
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_GET_LOGSTATUS = 9
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_SYNCHRO_OFFLINE_LOG = 10
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_SYNCHRO_TIME = 11
+EM_A_NET_EM_ACCESS_CTL_MANAGER NET_EM_ACCESS_CTL_SET_QRCODEDECODE_INFO = 12
+
+=== CALLBACK DEFINITION ===
+Arguments: (<class 'ctypes.c_longlong'>, <class 'ctypes.c_ulong'>, <class 'ctypes.c_void_p'>, <class 'ctypes.LP_c_ubyte'>, <class 'ctypes.c_ulong'>, <class 'ctypes.c_longlong'>, <class 'ctypes.c_long'>, <class 'ctypes.c_void_p'>)
+Return: None
+
+=== ACCESS EVENT STRUCTURE ===
+nChannelID <class 'ctypes.c_long'>
+szName <class 'NetSDK.SDK_Struct.c_char_Array_128'>
+bReserved1 <class 'NetSDK.SDK_Struct.c_char_Array_4'>
+PTS <class 'ctypes.c_double'>
+UTC <class 'NetSDK.SDK_Struct.NET_TIME_EX'>
+nEventID <class 'ctypes.c_long'>
+stuObject <class 'NetSDK.SDK_Struct.SDK_MSG_OBJECT'>
+stuFileInfo <class 'NetSDK.SDK_Struct.SDK_EVENT_FILE_INFO'>
+emEventType <class 'ctypes.c_long'>
+bStatus <class 'ctypes.c_long'>
+emCardType <class 'ctypes.c_long'>
+emOpenMethod <class 'ctypes.c_long'>
+szCardNo <class 'NetSDK.SDK_Struct.c_char_Array_32'>
+szPwd <class 'NetSDK.SDK_Struct.c_char_Array_64'>
+szReaderID <class 'NetSDK.SDK_Struct.c_char_Array_32'>
+szUserID <class 'NetSDK.SDK_Struct.c_char_Array_64'>
+szSnapURL <class 'NetSDK.SDK_Struct.c_char_Array_128'>
+nErrorCode <class 'ctypes.c_long'>
+nPunchingRecNo <class 'ctypes.c_long'>
+nNumbers <class 'ctypes.c_long'>
+byImageIndex <class 'ctypes.c_ubyte'>
+byReserved <class 'NetSDK.SDK_Struct.c_ubyte_Array_3'>
+dwSnapFlagMask <class 'ctypes.c_ulong'>
+emAttendanceState <class 'ctypes.c_long'>
+szClassNumber <class 'NetSDK.SDK_Struct.c_char_Array_32'>
+szPhoneNumber <class 'NetSDK.SDK_Struct.c_char_Array_16'>
+szCardName <class 'NetSDK.SDK_Struct.c_char_Array_64'>
+uSimilarity <class 'ctypes.c_ulong'>
+stuImageInfo <class 'NetSDK.SDK_Struct.DEV_ACCESS_CTL_IMAGE_INFO_Array_6'>
+nImageInfoCount <class 'ctypes.c_long'>
+szCitizenIDNo <class 'NetSDK.SDK_Struct.c_char_Array_20'>
+nGroupID <class 'ctypes.c_ulong'>
+nCompanionCardCount <class 'ctypes.c_long'>
+szCompanionCards <class 'NetSDK.SDK_Struct.c_char_Array_6_Array_32'>
+stuCustomWorkerInfo <class 'NetSDK.SDK_Struct.DEV_ACCESS_CTL_CUSTOM_WORKER_INFO'>
+emCardState <class 'ctypes.c_long'>
+szSN <class 'NetSDK.SDK_Struct.c_char_Array_32'>
+emHatStyle <class 'ctypes.c_long'>
+emHatColor <class 'ctypes.c_long'>
+emLiftCallerType <class 'ctypes.c_long'>
+bManTemperature <class 'ctypes.c_long'>
+stuManTemperatureInfo <class 'NetSDK.SDK_Struct.NET_MAN_TEMPERATURE_INFO'>
+szCitizenName <class 'NetSDK.SDK_Struct.c_char_Array_256'>
+nCompanionInfo <class 'ctypes.c_long'>
+stuCompanionInfo <class 'NetSDK.SDK_Struct.NET_COMPANION_INFO_Array_12'>
+emMask <class 'ctypes.c_long'>
+nFaceIndex <class 'ctypes.c_ulong'>
+bClassNumberEx <class 'ctypes.c_long'>
+szClassNumberEx <class 'NetSDK.SDK_Struct.c_char_Array_512'>
+szDormitoryNo <class 'NetSDK.SDK_Struct.c_char_Array_64'>
+szStudentNo <class 'NetSDK.SDK_Struct.c_char_Array_64'>
+emUserType <class 'ctypes.c_long'>
+bRealUTC <class 'ctypes.c_long'>
+RealUTC <class 'NetSDK.SDK_Struct.NET_TIME_EX'>
+szQRCode <class 'NetSDK.SDK_Struct.c_char_Array_512'>
+szCompanyName <class 'NetSDK.SDK_Struct.c_char_Array_200'>
+nScore <class 'ctypes.c_long'>
+emFaceCheck <class 'ctypes.c_long'>
+emQRCodeIsExpired <class 'ctypes.c_long'>
+emQRCodeState <class 'ctypes.c_long'>
+stuQRCodeValidTo <class 'NetSDK.SDK_Struct.NET_TIME'>
+nBlockId <class 'ctypes.c_ulong'>
+szSection <class 'NetSDK.SDK_Struct.c_char_Array_64'>
+szWorkClass <class 'NetSDK.SDK_Struct.c_char_Array_256'>
+emTestItems <class 'ctypes.c_long'>
+stuTestResult <class 'NetSDK.SDK_Struct.NET_TEST_RESULT'>
+szDeviceID <class 'NetSDK.SDK_Struct.c_char_Array_128'>
+szUserUniqueID <class 'NetSDK.SDK_Struct.c_char_Array_128'>
+bUseCardNameEx <class 'ctypes.c_long'>
+szCardNameEx <class 'NetSDK.SDK_Struct.c_char_Array_128'>
+nHSJCResult <class 'ctypes.c_long'>
+stuVaccineInfo <class 'NetSDK.SDK_Struct.NET_VACCINE_INFO'>
+stuTravelInfo <class 'NetSDK.SDK_Struct.NET_TRAVEL_INFO'>
+szTrafficPlate <class 'NetSDK.SDK_Struct.c_char_Array_32'>
+szQRCodeEx <class 'NetSDK.SDK_Struct.c_char_Array_2048'>
+szRecordUrl <class 'NetSDK.SDK_Struct.c_char_Array_128'>
+stuHSJCInfo <class 'NetSDK.SDK_Struct.NET_HSJC_INFO'>
+stuAntigenInfo <class 'NetSDK.SDK_Struct.NET_ANTIGEN_INFO'>
+szHealthGreenStatus <class 'NetSDK.SDK_Struct.c_char_Array_20'>
+szCitizenIDAddress <class 'NetSDK.SDK_Struct.c_char_Array_108'>
+nCitizenIDEC <class 'ctypes.c_ulong'>
+stuCitizenIDBirth <class 'NetSDK.SDK_Struct.NET_TIME'>
+stuEventInfoEx <class 'NetSDK.SDK_Struct.NET_EVENT_INFO_EXTEND'>
+nAge <class 'ctypes.c_long'>
+szCheckOutType <class 'NetSDK.SDK_Struct.c_char_Array_32'>
+szCheckOutCause <class 'NetSDK.SDK_Struct.c_char_Array_512'>
+szLocationName <class 'NetSDK.SDK_Struct.c_char_Array_256'>
+szLocationAddress <class 'NetSDK.SDK_Struct.c_char_Array_256'>
+szLocationType <class 'NetSDK.SDK_Struct.c_char_Array_256'>
+szCallLiftFloor <class 'NetSDK.SDK_Struct.c_char_Array_16'>
+stuObjectProperties <class 'NetSDK.SDK_Struct.NET_ACCESS_CTL_OBJECT_PROPERTIES'>
+szReversed <class 'NetSDK.SDK_Struct.c_ubyte_Array_320'>
+
+=== INSPECTION COMPLETE ===

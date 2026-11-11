@@ -108,6 +108,43 @@ class AccessCardRead(BaseModel):
     last_synced_at: datetime | None
 
 
+class DevicePersonProfileRead(BaseModel):
+    """Safe personnel fields returned by Dahua's access-user service.
+
+    Credential secrets and raw biometric payloads are deliberately omitted.
+    """
+    user_id: str
+    name: str | None = None
+    name_source: str | None = None
+    name_extension_enabled: bool = False
+    user_type: int
+    user_type_label: str
+    user_status: int
+    user_status_label: str
+    times_used_limit: int | None = None
+    times_used_label: str | None = None
+    password_configured: bool = False
+    effective_from: datetime | None = None
+    effective_until: datetime | None = None
+    door_indices: list[int] = Field(default_factory=list)
+    time_section_indices: list[int] = Field(default_factory=list)
+    special_day_schedule_indices: list[int] = Field(default_factory=list)
+    department: str | None = None
+    phone_number: str | None = None
+    sex_code: int | None = None
+    birthday: date | None = None
+    update_time: datetime | None = None
+    has_citizen_id: bool = False
+    floor_numbers: str | None = None
+    room_numbers: str | None = None
+    class_info: str | None = None
+    student_number: str | None = None
+    work_class: str | None = None
+    custom_user_type: int | None = None
+    custom_user_type_value: int | None = None
+    fail_code: int | None = None
+
+
 class DeviceCardRecordRead(BaseModel):
     record_number: int
     card_number: str
@@ -115,8 +152,30 @@ class DeviceCardRecordRead(BaseModel):
     card_status: int
     card_type: int
     is_valid: bool
+    person_status: bool = False
     valid_from: date | None
     valid_until: date | None
+    card_created_at: datetime | None = None
     door_indices: list[int]
     time_section_indices: list[int]
     device_user_id: str | None = None
+    password_configured: bool = False
+    times_used_limit: int | None = None
+    first_enter: bool = False
+    handicap_card: bool = False
+    face_template_count: int = 0
+    device_user_type: int | None = None
+    department_name: str | None = None
+    company_name: str | None = None
+    department_id: int | None = None
+    sex_code: int | None = None
+    role: str | None = None
+    phone_number: str | None = None
+    photo_path: str | None = None
+    picture_id: str | None = None
+    project_number: str | None = None
+    project_name: str | None = None
+    worker_type_id: str | None = None
+    worker_type_name: str | None = None
+    person_profile: DevicePersonProfileRead | None = None
+    person_profile_error: str | None = None

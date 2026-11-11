@@ -11,7 +11,10 @@ from app.models.device import Device
 from app.models.person import Person
 from app.models.access_card import AccessCard
 from app.schemas.person import PersonCreate, PersonUpdate, PersonRead
-from app.schemas.access_card import AccessCardCreate, AccessCardUpdate, AccessCardRead, DeviceCardRecordRead
+from app.schemas.access_card import (
+    AccessCardCreate, AccessCardUpdate, AccessCardRead,
+    DeviceCardRecordRead, DevicePersonProfileRead,
+)
 from app.services.access_cards import access_cards, AccessCardSDKError
 from app.services.device_sessions import sessions
 from app.services.dahua_sdk import DeviceLoginError, SDKUnavailableError
@@ -221,9 +224,54 @@ def list_controller_cards(device_id: int, db: Session = Depends(get_db)):
         rows = access_cards.list_device_cards(device_id)
     except AccessCardSDKError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    # A card row and a person profile are separate records in Dahua NetSDK.
+    # Link them through szUserID when the controller supplies it. Keep the card
+    # result available even when the firmware does not implement person lookup.
+    user_ids = list(dict.fromkeys(
+        row.get("device_user_id") for row in rows if row.get("device_user_id")
+    ))
+    profiles: dict[str, dict] = {}
+    lookup_error: str | None = None
+    if user_ids:
+        try:
+            profiles = access_cards.get_device_user_records(device_id, user_ids)
+        except AccessCardSDKError as exc:
+            lookup_error = str(exc)
+
+    for row in rows:
+        user_id = row.get("device_user_id")
+        row["person_profile"] = profiles.get(user_id) if user_id else None
+        row["person_profile_error"] = (
+            lookup_error if lookup_error else
+            (f"No person record returned for device user ID {user_id}."
+             if user_id and user_id not in profiles else None)
+        )
     return rows
 
 
+
+
+@router.get(
+    "/devices/{device_id}/person-records/{device_user_id}",
+    response_model=DevicePersonProfileRead,
+)
+def get_controller_person_record(
+    device_id: int, device_user_id: str, db: Session = Depends(get_db)
+):
+    """Read one native Dahua person record by its controller-side user ID."""
+    device = _device_or_404(db, device_id)
+    _ensure_connected(device, db)
+    try:
+        row = access_cards.get_device_user_record(device_id, device_user_id)
+    except AccessCardSDKError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Dahua returned no person record for device user ID {device_user_id!r}.",
+        )
+    return row
 
 
 @router.post("/devices/{device_id}/cards/import", tags=["People and IC Cards"])
