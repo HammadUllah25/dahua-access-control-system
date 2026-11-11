@@ -22,7 +22,8 @@ class Device(Base):
     username: Mapped[str] = mapped_column(String(80), nullable=False)
     password_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str | None] = mapped_column(String(80), nullable=True, default="ASI1201E")
-    serial_number: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    serial_number: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True, index=True)
+    mac_address: Mapped[str | None] = mapped_column(String(17), nullable=True, unique=True, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -35,3 +36,4 @@ class Device(Base):
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     cards = relationship("AccessCard", back_populates="device", cascade="all, delete-orphan")
+    access_events = relationship("AccessEvent", back_populates="device")

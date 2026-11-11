@@ -12,6 +12,8 @@ class DeviceCreate(BaseModel):
     username: str = Field(default="admin", min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=256)
     model: str | None = Field(default="ASI1201E", max_length=80)
+    serial_number: str | None = Field(default=None, max_length=120)
+    mac_address: str | None = Field(default=None, max_length=17)
     connect_now: bool = True
     monitoring_enabled: bool = True
 
@@ -23,6 +25,8 @@ class DeviceUpdate(BaseModel):
     username: str | None = Field(default=None, min_length=1, max_length=80)
     password: str | None = Field(default=None, min_length=1, max_length=256)
     model: str | None = Field(default=None, max_length=80)
+    serial_number: str | None = Field(default=None, max_length=120)
+    mac_address: str | None = Field(default=None, max_length=17)
     reconnect: bool = False
     monitoring_enabled: bool | None = None
 
@@ -38,6 +42,7 @@ class DeviceRead(BaseModel):
     username: str
     model: str | None
     serial_number: str | None
+    mac_address: str | None
     status: str
     last_error: str | None
     created_at: datetime

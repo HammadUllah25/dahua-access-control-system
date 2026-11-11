@@ -81,3 +81,35 @@ def ensure_access_card_import_columns() -> None:
             connection.execute(
                 text("ALTER TABLE access_cards ADD COLUMN device_card_status INTEGER NOT NULL DEFAULT 0")
             )
+
+
+def ensure_device_identity_columns() -> None:
+    """Add hardware identity columns/indexes to existing databases without deleting data."""
+    inspector = inspect(engine)
+    if "devices" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("devices")}
+    with engine.begin() as connection:
+        if "serial_number" not in existing_columns:
+            connection.execute(text("ALTER TABLE devices ADD COLUMN serial_number VARCHAR(120) NULL"))
+        if "mac_address" not in existing_columns:
+            connection.execute(text("ALTER TABLE devices ADD COLUMN mac_address VARCHAR(17) NULL"))
+
+    # Avoid creating duplicate unique indexes when the deployment already has them.
+    refreshed = inspect(engine)
+    indexes = refreshed.get_indexes("devices")
+    unique_columns = {
+        tuple(index.get("column_names") or [])
+        for index in indexes
+        if index.get("unique")
+    }
+    with engine.begin() as connection:
+        if ("serial_number",) not in unique_columns:
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_devices_serial_number ON devices (serial_number)"
+            ))
+        if ("mac_address",) not in unique_columns:
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_devices_mac_address ON devices (mac_address)"
+            ))
