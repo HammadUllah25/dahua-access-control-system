@@ -144,7 +144,11 @@ class DahuaAccessCardService:
 
     def _user_imports(self):
         try:
-            from NetSDK.SDK_Enum import EM_A_NET_EM_ACCESS_CTL_USER_SERVICE, EM_A_NET_ENUM_USER_TYPE
+            from NetSDK.SDK_Enum import (
+                EM_A_NET_EM_ACCESS_CTL_USER_SERVICE,
+                EM_A_NET_ENUM_USER_TYPE,
+                EM_A_NET_ATTENDANCE_AUTHORITY,
+            )
             from NetSDK.SDK_Struct import (
                 NET_ACCESS_USER_INFO,
                 NET_ACCESS_USER_INFO_EX,
@@ -153,10 +157,15 @@ class DahuaAccessCardService:
                 NET_FLOORS_INFO,
                 NET_IN_ACCESS_USER_SERVICE_GET,
                 NET_OUT_ACCESS_USER_SERVICE_GET,
+                NET_IN_ACCESS_USER_SERVICE_INSERT,
+                NET_OUT_ACCESS_USER_SERVICE_INSERT,
+                NET_IN_ACCESS_USER_SERVICE_REMOVE,
+                NET_OUT_ACCESS_USER_SERVICE_REMOVE,
             )
             return {
                 "UserService": EM_A_NET_EM_ACCESS_CTL_USER_SERVICE,
                 "UserType": EM_A_NET_ENUM_USER_TYPE,
+                "Authority": EM_A_NET_ATTENDANCE_AUTHORITY,
                 "UserInfo": NET_ACCESS_USER_INFO,
                 "UserInfoEx": NET_ACCESS_USER_INFO_EX,
                 "UserInfoEx2": NET_ACCESS_USER_INFO_EX2,
@@ -164,6 +173,10 @@ class DahuaAccessCardService:
                 "FloorsInfo": NET_FLOORS_INFO,
                 "GetIn": NET_IN_ACCESS_USER_SERVICE_GET,
                 "GetOut": NET_OUT_ACCESS_USER_SERVICE_GET,
+                "InsertIn": NET_IN_ACCESS_USER_SERVICE_INSERT,
+                "InsertOut": NET_OUT_ACCESS_USER_SERVICE_INSERT,
+                "RemoveIn": NET_IN_ACCESS_USER_SERVICE_REMOVE,
+                "RemoveOut": NET_OUT_ACCESS_USER_SERVICE_REMOVE,
             }
         except Exception as exc:
             raise AccessCardSDKError(
@@ -454,6 +467,139 @@ class DahuaAccessCardService:
                 if profile is not None:
                     result[requested_id] = profile
         return result
+
+    @_per_device_serialized
+    def add_device_user(
+        self,
+        device_id: int,
+        *,
+        user_id: str,
+        name: str,
+        password: str | None,
+        department: str | None,
+        phone_number: str | None,
+        valid_from: date,
+        valid_until: date,
+        door_indices: list[int],
+        time_section_indices: list[int],
+    ) -> str:
+        """Create one Dahua personnel profile, including optional UserID+password credentials."""
+        from ctypes import POINTER, cast, c_int, pointer, sizeof
+
+        user_id = str(user_id).strip()
+        name = str(name).strip()
+        if not user_id or len(user_id.encode("utf-8")) > 31:
+            raise AccessCardSDKError("person_code must fit within 31 UTF-8 bytes for the Dahua device user ID.")
+        if not name:
+            raise AccessCardSDKError("A non-empty person name is required.")
+        if len(name.encode("utf-8")) > 127:
+            raise AccessCardSDKError("Person name exceeds the Dahua extended-name limit of 127 UTF-8 bytes.")
+        if password is not None and len(password.encode("utf-8")) > 63:
+            raise AccessCardSDKError("user_password must not exceed 63 UTF-8 bytes.")
+        if len(door_indices) > 32 or len(time_section_indices) > 32:
+            raise AccessCardSDKError("Dahua supports at most 32 door and time-section indexes per user.")
+
+        api = self._user_imports()
+        handle = self._session_handle(device_id)
+        existing = self.get_device_user_records(device_id, [user_id])
+        if user_id in existing:
+            raise AccessCardSDKError(f"Device user ID {user_id!r} already exists on this controller.")
+
+        user = api["UserInfo"]()
+        user.szUserID = user_id.encode("utf-8")
+        # Use the extended-name member for the full display name; keep a safe short fallback.
+        encoded_name = name.encode("utf-8")
+        short_name = encoded_name[:31].decode("utf-8", "ignore")
+        user.szName = short_name.encode("utf-8")
+        user.bUseNameEx = True
+        user.szNameEx = encoded_name
+        user.emUserType = int(api["UserType"].NET_ENUM_USER_TYPE_NORMAL)
+        user.nUserStatus = 0  # 0 = normal/active
+        user.emAuthority = int(api["Authority"].NET_ATTENDANCE_AUTHORITY_CUSTOMER)
+        if password:
+            user.szPsw = password.encode("utf-8")
+        if department:
+            department_bytes = department.strip().encode("utf-8")
+            if len(department_bytes) > 127:
+                raise AccessCardSDKError("Department exceeds the 127-byte Dahua field limit.")
+            user.szDepartment = department_bytes
+        if phone_number:
+            phone_bytes = phone_number.strip().encode("utf-8")
+            if len(phone_bytes) > 31:
+                raise AccessCardSDKError("Phone number exceeds the 31-byte Dahua field limit.")
+            user.szPhoneNumber = phone_bytes
+
+        user.nDoorNum = len(door_indices)
+        for index, door in enumerate(door_indices):
+            user.nDoors[index] = int(door)
+        user.nTimeSectionNum = len(time_section_indices)
+        for index, section in enumerate(time_section_indices):
+            user.nTimeSectionNo[index] = int(section)
+        _set_time(user.stuValidBeginTime, valid_from)
+        _set_time(user.stuValidEndTime, valid_until)
+
+        insert_in = api["InsertIn"]()
+        insert_in.dwSize = sizeof(api["InsertIn"])
+        insert_in.nInfoNum = 1
+        insert_in.pUserInfo = cast(pointer(user), POINTER(api["UserInfo"]))
+
+        fail_codes = (c_int * 1)()
+        insert_out = api["InsertOut"]()
+        insert_out.dwSize = sizeof(api["InsertOut"])
+        insert_out.nMaxRetNum = 1
+        insert_out.pFailCode = cast(fail_codes, POINTER(c_int))
+
+        client = self._device_sdk._client
+        if not client.OperateAccessUserService(
+            handle,
+            api["UserService"].NET_EM_ACCESS_CTL_USER_SERVICE_INSERT,
+            insert_in,
+            insert_out,
+            5000,
+        ):
+            raise AccessCardSDKError("Dahua personnel insert failed: " + str(client.GetLastErrorMessage()))
+        fail_code = int(fail_codes[0])
+        if fail_code != 0:
+            raise AccessCardSDKError(
+                f"Dahua rejected personnel profile {user_id!r} (failure code {fail_code})."
+            )
+        return user_id
+
+    @_per_device_serialized
+    def delete_device_user(self, device_id: int, user_id: str) -> None:
+        """Remove one Dahua personnel profile; used for compensation after failed card assignment."""
+        from ctypes import POINTER, cast, c_int, sizeof
+
+        user_id = str(user_id).strip()
+        if not user_id or len(user_id.encode("utf-8")) > 31:
+            raise AccessCardSDKError("Invalid Dahua device user ID.")
+        api = self._user_imports()
+        handle = self._session_handle(device_id)
+
+        remove_in = api["RemoveIn"]()
+        remove_in.dwSize = sizeof(api["RemoveIn"])
+        remove_in.nUserNum = 1
+        remove_in.szUserID = user_id.encode("utf-8")
+        fail_codes = (c_int * 1)()
+        remove_out = api["RemoveOut"]()
+        remove_out.dwSize = sizeof(api["RemoveOut"])
+        remove_out.nMaxRetNum = 1
+        remove_out.pFailCode = cast(fail_codes, POINTER(c_int))
+
+        client = self._device_sdk._client
+        if not client.OperateAccessUserService(
+            handle,
+            api["UserService"].NET_EM_ACCESS_CTL_USER_SERVICE_REMOVE,
+            remove_in,
+            remove_out,
+            5000,
+        ):
+            raise AccessCardSDKError("Dahua personnel removal failed: " + str(client.GetLastErrorMessage()))
+        fail_code = int(fail_codes[0])
+        if fail_code != 0:
+            raise AccessCardSDKError(
+                f"Dahua could not remove personnel profile {user_id!r} (failure code {fail_code})."
+            )
 
     def get_device_user_record(self, device_id: int, user_id: str) -> dict[str, Any] | None:
         """Read one controller person record by device-side user ID."""

@@ -13,6 +13,11 @@ from app.schemas.device import DeviceCreate, DeviceRead, DeviceUpdate
 from app.services.dahua_sdk import DeviceLoginError, SDKUnavailableError
 from app.services.device_sessions import sessions
 from app.services.device_monitor import monitor
+from app.services.realtime import (
+    device_status_data,
+    publish_device_deleted,
+    publish_device_status,
+)
 from app.services.secret_store import encrypt_secret
 
 
@@ -119,6 +124,19 @@ def list_devices(db: Session = Depends(get_db)):
     return db.query(Device).order_by(Device.id.asc()).all()
 
 
+@router.get("/status", tags=["Monitoring"])
+def list_device_statuses(db: Session = Depends(get_db)):
+    """Compact, credential-free status snapshot for dashboard initialization."""
+    devices = db.query(Device).order_by(Device.id.asc()).all()
+    items = [device_status_data(device) for device in devices]
+    summary = {"total": len(items), "online": 0, "offline": 0, "pending": 0, "unknown": 0}
+    for item in items:
+        key = item["status"] if item["status"] in {"online", "offline", "pending"} else "unknown"
+        summary[key] += 1
+    return {"items": items, "summary": summary}
+
+
+
 @router.post(
     "",
     response_model=DeviceRead,
@@ -184,6 +202,8 @@ def add_device(
 
         db.commit()
         db.refresh(device)
+        if device.status != "pending":
+            publish_device_status(device, reason="device_registered_and_connected")
 
     return device
 
@@ -203,6 +223,7 @@ def update_device(
     db: Session = Depends(get_db)
 ):
     device = _get_device(db, device_id)
+    previous_status = device.status
 
     values = payload.model_dump(
         exclude_unset=True,
@@ -310,6 +331,8 @@ def update_device(
         db.commit()
         db.refresh(device)
 
+    if device.status != previous_status:
+        publish_device_status(device, reason="device_updated")
     return device
 
 
@@ -319,6 +342,7 @@ def connect_device(
     db: Session = Depends(get_db)
 ):
     device = _get_device(db, device_id)
+    previous_status = device.status
 
     device.monitoring_enabled = True
     device.last_connect_attempt_at = datetime.now(timezone.utc)
@@ -344,6 +368,8 @@ def connect_device(
     db.commit()
     db.refresh(device)
 
+    if device.status != previous_status:
+        publish_device_status(device, reason="manual_connect")
     return device
 
 
@@ -353,6 +379,7 @@ def disconnect_device(
     db: Session = Depends(get_db)
 ):
     device = _get_device(db, device_id)
+    previous_status = device.status
 
     sessions.disconnect(device.id)
 
@@ -362,6 +389,8 @@ def disconnect_device(
     db.commit()
     db.refresh(device)
 
+    if device.status != previous_status:
+        publish_device_status(device, reason="manual_disconnect")
     return device
 
 
@@ -376,6 +405,7 @@ def delete_device(
 
     db.delete(device)
     db.commit()
+    publish_device_deleted(device_id)
 
     return {
         "deleted": True,

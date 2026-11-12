@@ -18,6 +18,10 @@ This build layers the latest user-provided device identity API and the post-arch
 - `bStatus` mapping (`TRUE` = `granted`, `FALSE` = `denied`) per the vendor SDK structure comment
 - Background event persistence into SQLite `access_events`
 - REST endpoints for access-event history, details, and summary counters
+- Timed scan-to-enroll sessions that capture a card UID from the access-event callback
+- Dahua personnel profile INSERT/REMOVE operations using `OperateAccessUserService` and `NET_ACCESS_USER_INFO`
+- Confirmation endpoint that creates a device personnel profile, writes the captured card UID, and saves the central person/card assignment with compensating cleanup on failure
+- Optional UserID+password credential in `NET_ACCESS_USER_INFO.szPsw`; the secret is sent to the controller only and is not stored in the application database
 - Shared Ethernet-only IPv4 adapter filtering for both network and device-initialization interface endpoints
 - Correct use of `socket.AF_INET` in adapter enumeration
 - Safe replacement instructions that protect `.env` and the existing database
@@ -27,4 +31,15 @@ This build layers the latest user-provided device identity API and the post-arch
 - This is the FastAPI backend starter folder, not the user's entire parent Git repository or a separate frontend/dashboard project.
 - Local `.env`, the user's SQLite database, virtual environment, and the Dahua SDK wheel are intentionally excluded.
 - Source syntax, SQLite migrations, endpoint behavior, duplicate identity checks, event decoding, event persistence, and summary counts were tested in an offline container.
-- A live subscription and physical card-scan test on the user's ASI1201E has not been performed from this build environment.
+- A live subscription, unknown-card UID capture, personnel INSERT/REMOVE, and physical card-scan test on the user's ASI1201E have not been performed from this build environment.
+
+
+## Live dashboard status integration
+
+- `GET /devices/status` returns the initial device status snapshot and aggregate counts without credentials.
+- `GET /devices/monitor/status` exposes monitor health/configuration.
+- `WS /ws/devices` sends the initial snapshot, status-transition events, deletion events, and 25-second heartbeats. An optional `device_id` query parameter narrows the stream.
+- Status changes from background monitoring and manual connect/disconnect/update/delete operations are published to connected WebSocket clients.
+- Added `app/services/realtime.py`, `app/api/realtime.py`, and `docs/NEXTJS_DEVICE_STATUS_INTEGRATION.md`.
+- The monitor checks TCP reachability plus a local SDK login session; it does not rely on WebSocket state and continues running when dashboards are disconnected.
+- Local test coverage: REST status routes, WebSocket snapshot, ping/pong, and background-thread status-event delivery. Physical controller behavior is not newly changed by this update.
