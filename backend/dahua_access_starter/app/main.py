@@ -8,6 +8,7 @@ from app.api.device_initialization import router as device_initialization_router
 from app.api.people_cards import router as people_cards_router
 from app.api.network import router as network_router
 from app.api.access_events import router as access_events_router
+from app.api.realtime import router as realtime_router
 from app.core.config import APP_NAME
 from app.core.database import (
     Base,
@@ -40,10 +41,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=APP_NAME,
-    version="0.6.0",
+    version="0.8.0",
     description=(
         "API for Dahua access-controller registration, LAN initialization, monitoring, "
-        "people and IC-card management, Ethernet adapter discovery, and persisted access events."
+        "people and IC-card management, timed RFID card enrollment, Ethernet adapter discovery, "
+        "and persisted access events."
     ),
     lifespan=lifespan,
 )
@@ -51,8 +53,9 @@ app = FastAPI(
 app.include_router(devices_router)
 app.include_router(device_initialization_router)
 app.include_router(people_cards_router)
-# app.include_router(network_router)
+app.include_router(network_router)
 app.include_router(access_events_router)
+app.include_router(realtime_router)
 
 
 @app.get("/health", tags=["System"])

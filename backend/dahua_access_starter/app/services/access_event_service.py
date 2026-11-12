@@ -52,6 +52,18 @@ class AccessEventService:
             "device_host": device_host,
             "device_serial_number": device_serial_number,
         }
+        # Enrollment matching is an in-memory operation and must remain quick;
+        # database writes are still handled by the separate worker below.
+        try:
+            from app.services.card_enrollment import enrollment_service
+            if enrollment_service.observe_event(int(device_id), item["payload"]):
+                logger.info(
+                    "Card UID captured for enrollment | device_id=%s | card=%s",
+                    device_id,
+                    item["payload"].get("card_number"),
+                )
+        except Exception:
+            logger.exception("Could not match Dahua event to an active card enrollment.")
         try:
             self._queue.put_nowait(item)
         except queue.Full:

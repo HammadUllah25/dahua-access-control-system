@@ -15,9 +15,17 @@ from app.schemas.access_card import (
     AccessCardCreate, AccessCardUpdate, AccessCardRead,
     DeviceCardRecordRead, DevicePersonProfileRead,
 )
+from app.schemas.card_enrollment import (
+    CardEnrollmentStart, CardEnrollmentRead, CardEnrollmentConfirm,
+    CardEnrollmentConfirmRead,
+)
+from app.services.card_enrollment import (
+    enrollment_service, CardEnrollmentError,
+)
 from app.services.access_cards import access_cards, AccessCardSDKError
 from app.services.device_sessions import sessions
 from app.services.dahua_sdk import DeviceLoginError, SDKUnavailableError
+from app.services.realtime import publish_device_status
 
 router = APIRouter(tags=["People and IC Cards"])
 
@@ -37,6 +45,7 @@ def _device_or_404(db: Session, device_id: int) -> Device:
 
 
 def _ensure_connected(device: Device, db: Session) -> None:
+    previous_status = device.status
     try:
         if not sessions.is_connected(device.id):
             session = sessions.connect(device)
@@ -45,10 +54,14 @@ def _ensure_connected(device: Device, db: Session) -> None:
             device.last_connected_at = session.connected_at
             device.last_error = None
             db.commit()
+            if device.status != previous_status:
+                publish_device_status(device, reason="card_operation_connected")
     except (SDKUnavailableError, DeviceLoginError, ValueError) as exc:
         device.status = "offline"
         device.last_error = str(exc)
         db.commit()
+        if device.status != previous_status:
+            publish_device_status(device, reason="card_operation_connection_failed")
         raise HTTPException(status_code=503, detail=f"Could not connect to Dahua device: {exc}") from exc
 
 
@@ -138,17 +151,25 @@ def delete_person(person_id: int, db: Session = Depends(get_db)):
     return {"deleted": True, "person_id": person_id}
 
 
-@router.post("/devices/{device_id}/cards", response_model=AccessCardRead, status_code=status.HTTP_201_CREATED)
-def assign_ic_card(device_id: int, payload: AccessCardCreate, db: Session = Depends(get_db)):
+def _write_card_assignment(
+    device_id: int,
+    payload: AccessCardCreate,
+    db: Session,
+    *,
+    card_number_override: str | None = None,
+) -> AccessCard:
     device = _device_or_404(db, device_id)
     person = _person_or_404(db, payload.person_id)
-    card_number = payload.card_number.upper()
+    card_number = (card_number_override or payload.card_number).upper()
     duplicate = db.query(AccessCard).filter(
         AccessCard.device_id == device_id,
         AccessCard.card_number == card_number,
     ).first()
     if duplicate:
-        raise HTTPException(status_code=409, detail="This IC card is already assigned to this device in the application.")
+        raise HTTPException(
+            status_code=409,
+            detail="This IC card is already assigned to this device in the application.",
+        )
 
     _ensure_connected(device, db)
     card_name = (payload.card_name or person.name).strip()
@@ -166,7 +187,9 @@ def assign_ic_card(device_id: int, payload: AccessCardCreate, db: Session = Depe
             time_section_indices=payload.time_section_indices,
         )
     except AccessCardSDKError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        message = str(exc)
+        code = 409 if "already exists" in message.lower() else 502
+        raise HTTPException(status_code=code, detail=message) from exc
 
     assignment = AccessCard(
         person_id=person.id,
@@ -190,18 +213,176 @@ def assign_ic_card(device_id: int, payload: AccessCardCreate, db: Session = Depe
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        # The controller insert already succeeded. Attempt compensation so a
-        # duplicate/racing DB write does not leave an untracked device card.
         try:
             access_cards.delete_device_card(device_id, record_no)
         except AccessCardSDKError:
             pass
         raise HTTPException(
             status_code=409,
-            detail="The card was written to the controller, but the application could not save its assignment. A cleanup was attempted; read controller card records to verify.",
+            detail=(
+                "The card was written to the controller, but the application could not save its assignment. "
+                "A cleanup was attempted; read controller card records to verify."
+            ),
         ) from exc
     db.refresh(assignment)
     return assignment
+
+
+@router.post("/devices/{device_id}/cards", response_model=AccessCardRead, status_code=status.HTTP_201_CREATED)
+def assign_ic_card(device_id: int, payload: AccessCardCreate, db: Session = Depends(get_db)):
+    return _write_card_assignment(device_id, payload, db)
+
+
+@router.post(
+    "/devices/{device_id}/card-enrollments",
+    response_model=CardEnrollmentRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def begin_card_enrollment(
+    device_id: int,
+    payload: CardEnrollmentStart,
+    db: Session = Depends(get_db),
+):
+    """Start listening for one RFID scan; the card UID is captured from Dahua alarm events."""
+    device = _device_or_404(db, device_id)
+    _ensure_connected(device, db)
+    session = sessions.get_session(device_id)
+    if session is None or not session.alarm_listening:
+        # A previous login may have remained online after its alarm subscription failed.
+        if session is not None:
+            sessions.disconnect(device_id)
+        _ensure_connected(device, db)
+        session = sessions.get_session(device_id)
+    if session is None or not session.alarm_listening:
+        reason = session.subscription_error if session else "No active SDK login."
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "The device is connected, but Dahua alarm listening is not active. "
+                f"Subscription detail: {reason or 'unknown error'}"
+            ),
+        )
+    try:
+        result = enrollment_service.begin(device_id, payload.timeout_seconds)
+    except CardEnrollmentError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return result
+
+
+@router.get(
+    "/devices/{device_id}/card-enrollments/{session_token}",
+    response_model=CardEnrollmentRead,
+)
+def get_card_enrollment(device_id: int, session_token: str):
+    result = enrollment_service.get(device_id, session_token)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Card enrollment session not found.")
+    return result
+
+
+@router.delete(
+    "/devices/{device_id}/card-enrollments/{session_token}",
+    response_model=CardEnrollmentRead,
+)
+def cancel_card_enrollment(device_id: int, session_token: str):
+    try:
+        result = enrollment_service.cancel(device_id, session_token)
+    except CardEnrollmentError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Card enrollment session not found.")
+    return result
+
+
+@router.post(
+    "/devices/{device_id}/card-enrollments/{session_token}/confirm",
+    response_model=CardEnrollmentConfirmRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def confirm_card_enrollment(
+    device_id: int,
+    session_token: str,
+    payload: CardEnrollmentConfirm,
+    db: Session = Depends(get_db),
+):
+    """Create the Dahua personnel profile, write the captured card, and save its app assignment."""
+    device = _device_or_404(db, device_id)
+    person = _person_or_404(db, payload.person_id)
+    try:
+        enrollment = enrollment_service.claim_for_confirmation(device_id, session_token)
+    except CardEnrollmentError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    card_number = enrollment.card_number or ""
+    user_id = person.person_code
+    device_user_created = False
+    try:
+        # Validate the captured UID against the same hexadecimal UID rules used
+        # by the ordinary card-assignment API before writing anything to hardware.
+        try:
+            card_payload = AccessCardCreate(
+                person_id=person.id,
+                card_number=card_number,
+                card_name=payload.card_name or person.name,
+                card_type=payload.card_type,
+                is_valid=payload.is_valid,
+                valid_from=payload.valid_from,
+                valid_until=payload.valid_until,
+                door_indices=payload.door_indices,
+                time_section_indices=payload.time_section_indices,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"The captured card UID is not a supported hexadecimal IC UID: {exc}",
+            ) from exc
+
+        _ensure_connected(device, db)
+        try:
+            access_cards.add_device_user(
+                device_id,
+                user_id=user_id,
+                name=person.name,
+                password=payload.user_password.get_secret_value() if payload.user_password else None,
+                department=person.department,
+                phone_number=person.phone,
+                valid_from=payload.valid_from,
+                valid_until=payload.valid_until,
+                door_indices=payload.door_indices,
+                time_section_indices=payload.time_section_indices,
+            )
+            device_user_created = True
+        except AccessCardSDKError as exc:
+            message = str(exc)
+            lowered = message.lower()
+            code = 409 if "already exists" in lowered else (422 if "must fit" in lowered or "exceeds" in lowered else 502)
+            raise HTTPException(status_code=code, detail=f"Could not create the Dahua personnel profile: {message}") from exc
+
+        try:
+            assignment = _write_card_assignment(
+                device_id,
+                card_payload,
+                db,
+                card_number_override=card_number,
+            )
+        except Exception:
+            if device_user_created:
+                try:
+                    access_cards.delete_device_user(device_id, user_id)
+                except AccessCardSDKError:
+                    # Preserve the original error; the controller user may need manual cleanup.
+                    pass
+            raise
+
+        enrollment_service.confirmation_succeeded(device_id, session_token)
+        return {
+            "message": "Dahua personnel profile and captured card were registered successfully.",
+            "device_user_id": user_id,
+            "card": assignment,
+        }
+    except Exception:
+        enrollment_service.confirmation_failed(device_id, session_token)
+        raise
 
 
 @router.get("/devices/{device_id}/cards", response_model=list[AccessCardRead])

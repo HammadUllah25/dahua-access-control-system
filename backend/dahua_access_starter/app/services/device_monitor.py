@@ -21,6 +21,7 @@ from app.core.config import (
 from app.models.device import Device
 from app.services.dahua_sdk import DeviceLoginError, SDKUnavailableError
 from app.services.device_sessions import sessions
+from app.services.realtime import publish_device_status
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,7 @@ class DeviceMonitor:
             if not device.monitoring_enabled:
                 return {"device_id": device_id, "result": "monitoring_disabled"}
 
+            previous_status = device.status
             reachable, probe_error = tcp_port_is_reachable(
                 device.host,
                 device.port,
@@ -185,6 +187,8 @@ class DeviceMonitor:
                         f"{probe_error or ''}".strip()
                     )
                 db.commit()
+                if device.status != previous_status:
+                    publish_device_status(device, reason="monitor_unreachable")
                 return {
                     "device_id": device.id,
                     "result": "unreachable",
@@ -237,6 +241,8 @@ class DeviceMonitor:
                 device.last_error = None
                 device.consecutive_failures = 0
                 db.commit()
+                if device.status != previous_status:
+                    publish_device_status(device, reason="monitor_reconnected")
                 return {
                     "device_id": device.id,
                     "result": "reconnected",
@@ -247,6 +253,8 @@ class DeviceMonitor:
                 device.status = "offline"
                 device.last_error = str(exc)
                 db.commit()
+                if device.status != previous_status:
+                    publish_device_status(device, reason="monitor_login_failed")
                 return {
                     "device_id": device.id,
                     "result": "login_failed",

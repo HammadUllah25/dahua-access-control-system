@@ -7,6 +7,7 @@ FastAPI backend for Dahua ASI1201E access controllers using the Dahua NetSDK Pyt
 - Device registration, connection/disconnection and automatic TCP health monitoring.
 - Central personnel records (`/persons`).
 - IC/MIFARE card assignment to a specific controller (`/devices/{device_id}/cards`).
+- Scan-to-enroll workflow: capture a card UID, create the controller personnel profile with optional UserID+password, and register the card (`/devices/{device_id}/card-enrollments`).
 - Native controller card query (`/devices/{device_id}/cards/device-records`).
 - Native controller card insert, update and remove through NetSDK record-set operations.
 - Person-to-card assignment lookup across registered controllers (`/persons/{person_id}/cards`).
@@ -96,7 +97,7 @@ The access-card CRUD implementation uses:
 - `NetClient.ControlDevice(..., CtrlType.RECORDSET_REMOVE, ...)`
 - `NetClient.FindRecord`, `FindNextRecord`, and `FindRecordClose` with `EM_NET_RECORD_TYPE.ACCESSCTLCARD`
 
-The SDK's `NET_RECORDSET_ACCESS_CTL_CARD` declaration marks `szUserID` as unsupported on this legacy record format. Therefore `Person` is the central application record, while `szCardName`, card UID, validity, door indexes and time-section indexes are synchronized to the controller. The application keeps the `person_id` ↔ device-card assignment mapping. Creating/updating a `/persons` record changes the central database only; assigning/updating a `/devices/{device_id}/cards` record changes the physical controller. If a person's name changes, update the card's `card_name` separately when you want the controller display name changed.
+The SDK's `NET_RECORDSET_ACCESS_CTL_CARD` declaration marks `szUserID` as unsupported on this legacy record format. Therefore `Person` is the central application record, while `szCardName`, card UID, validity, door indexes and time-section indexes are synchronized to the controller. The application keeps the `person_id` ↔ device-card assignment mapping. Creating/updating a `/persons` record changes the central database only; ordinary direct assignment through `/devices/{device_id}/cards` writes the physical card record. The scan-to-enroll confirmation flow additionally creates a separate Dahua personnel profile (using `person_code` as UserID). If a person's name changes, update the card's `card_name` separately when you want the controller display name changed.
 
 ## Important permission/index note
 
@@ -232,6 +233,54 @@ The new personnel lookup uses `OperateAccessUserService` and is not yet verified
 
 ---
 
+
+## Scan-to-enroll a new IC card
+
+The scan-to-enroll workflow listens to the selected controller's Dahua access-control alarm stream. It captures the first event containing a card UID during the active enrollment window. An unregistered card must cause the controller to emit an access-control event containing `szCardNo`; some firmware/configurations may not report unknown-card scans. If no UID is reported, the session remains `waiting` and eventually expires.
+
+### Workflow
+
+1. Create the central person using `POST /persons`.
+2. Start a timed scan window using `POST /devices/{device_id}/card-enrollments`.
+3. Present the physical IC card to the ASI1201E reader.
+4. Poll `GET /devices/{device_id}/card-enrollments/{session_token}` until `status` becomes `captured`.
+5. Confirm using `POST /devices/{device_id}/card-enrollments/{session_token}/confirm`.
+6. The backend creates the Dahua personnel profile (person code as device UserID, name, optional UserID+password credential and permissions), writes the captured UID as an IC-card record, and saves the application assignment.
+
+Start request:
+
+```json
+{
+  "timeout_seconds": 90
+}
+```
+
+Confirm request (the card number is intentionally taken from the captured event; do not supply it again):
+
+```json
+{
+  "person_id": 1,
+  "user_password": "246810",
+  "card_type": "general",
+  "is_valid": true,
+  "valid_from": "2026-11-11",
+  "valid_until": "2037-12-31",
+  "door_indices": [0],
+  "time_section_indices": [0]
+}
+```
+
+`user_password` is Dahua's personnel `UserID + password` credential stored in `NET_ACCESS_USER_INFO.szPsw`; it is not the device administrator password. The backend sends it to the controller and does not persist or return it. The device UserID is the person's `person_code`, which must fit within 31 UTF-8 bytes. The full name is sent through the SDK extended-name field. The card UID is stored separately in the controller card record and linked to the central `person_id` in the application's database; the legacy card structure's `szUserID` field is not assumed to be supported by ASI1201E firmware.
+
+Additional endpoints:
+
+- `GET /devices/{device_id}/card-enrollments/{session_token}` — poll enrollment status and captured UID.
+- `DELETE /devices/{device_id}/card-enrollments/{session_token}` — cancel an unfinished enrollment.
+
+Only one active enrollment is allowed per device at a time. Enrollment sessions are held in backend memory and are cleared when the API process restarts. A failed confirmation leaves the captured UID available for retry. If user creation succeeds but card registration fails, the backend attempts to remove the newly created device user as compensation.
+
+**Hardware verification required:** the SDK structures and insert/remove operations are derived from the supplied NetSDK 3.060 Python wheel, but this environment cannot verify that the ASI1201E firmware reports an unknown card UID or accepts the personnel INSERT operation. Test with one spare card and one test person first. Confirm `status=captured`, then inspect `GET /devices/{device_id}/cards/device-records` and the person lookup endpoint before using this for real access credentials.
+
 ## Live Access Events (ASI1201E)
 
 The backend registers the NetSDK message callback with `SetDVRMessCallBackEx1` during SDK initialization and starts device-specific alarm listening after a successful login with `StartListenEx`. Access-control messages are decoded from `NET_A_ALARM_ACCESS_CTL_EVENT_INFO` (`SDK_ALARM_TYPE.ALARM_ACCESS_CTL_EVENT`).
@@ -256,3 +305,67 @@ The list endpoint returns newest-first events and is intended for dashboard/hist
 - `GET /device-initialization/interfaces` returns the Ethernet IPv4 addresses that LAN discovery uses by default. An explicit `local_ip` supplied to the discovery endpoint is still honored.
 
 The adapter filter is based on interface names containing `Ethernet`, `eth`, or `LAN`. Rename a Windows adapter to an Ethernet/LAN-style name if it is not detected by this filter.
+
+## Live device status for the Next.js dashboard
+
+The backend runs a background monitor independently of dashboard users. By default it checks each registered controller every 10 seconds, tests its configured TCP port, and verifies that the backend still owns a Dahua SDK login session. A device is marked offline after two consecutive failed TCP checks or an SDK login failure. The monitor stores the status and health timestamps in the database.
+
+### Initial status snapshot
+
+`GET /devices/status` returns a compact, credential-free list and summary counts:
+
+```json
+{
+  "items": [
+    {
+      "device_id": 1,
+      "name": "Washroom Controller",
+      "host": "192.168.0.2",
+      "port": 37777,
+      "model": "ASI1201E",
+      "serial_number": "AM029C2PAJ1057A",
+      "status": "online",
+      "monitoring_enabled": true,
+      "last_seen": "2026-11-12T06:40:00+00:00",
+      "last_health_check_at": "2026-11-12T06:40:00+00:00",
+      "consecutive_failures": 0,
+      "last_error": null
+    }
+  ],
+  "summary": {"total": 1, "online": 1, "offline": 0, "pending": 0, "unknown": 0}
+}
+```
+
+### WebSocket live updates
+
+Connect to `ws://localhost:8000/ws/devices` (use `wss://` in production). Optionally subscribe to one device with `?device_id=1`. The connection first sends `device.status.snapshot`, then pushes events whenever a status changes. It also sends a heartbeat every 25 seconds when there are no updates.
+
+Event types:
+
+- `device.status.snapshot` — initial device list and summary counts.
+- `device.status.changed` — one device's latest state after an online/offline transition or manual connection-state change.
+- `device.deleted` — a registered device was deleted.
+- `heartbeat` — connection liveness message.
+- `pong` — response to an optional client message `{"type":"ping"}`.
+
+Example status-change event:
+
+```json
+{
+  "type": "device.status.changed",
+  "data": {
+    "device_id": 1,
+    "status": "offline",
+    "last_seen": "2026-11-12T06:40:00+00:00",
+    "consecutive_failures": 2,
+    "last_error": "Health check failed: TCP 192.168.0.2:37777 is unreachable.",
+    "reason": "monitor_unreachable"
+  }
+}
+```
+
+The actual status payload includes device identity, name, host/port, monitoring state, timestamps, failure count, and error details; it never includes the device username or password. See `docs/NEXTJS_DEVICE_STATUS_INTEGRATION.md` for a client-side Next.js example.
+
+### Monitoring semantics and deployment notes
+
+`online` means the configured TCP port is reachable and this backend process holds a NetSDK login session. This is an application health check, not a controller-originated heartbeat. Status detection can take roughly two monitor intervals after a sudden network loss (default: around 20 seconds), plus the TCP timeout. The monitor is single-process and must run with one Uvicorn worker because SDK login handles are process-local. Do not run multiple API replicas with independent monitors against the same devices. The current API has no authentication layer; keep it on a trusted LAN/VPN until authentication and authorization are added before public exposure.
