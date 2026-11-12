@@ -62,9 +62,8 @@ import {
 
 const GRID_STROKE = "var(--border)";
 const AXIS_FILL = "var(--muted-foreground)";
-const GREEN = "var(--led-green)";
 const RED = "var(--led-red)";
-const VIOLET = "var(--chart-1)";
+const ACCENT = "var(--chart-1)";
 
 function OverviewView() {
   const [range, setRange] = useState<RangeKey>("7d");
@@ -190,7 +189,7 @@ function OverviewView() {
                 <XAxis dataKey="day" tick={{ fill: AXIS_FILL, fontSize: 11 }} tickLine={false} axisLine={{ stroke: GRID_STROKE }} />
                 <YAxis tick={{ fill: AXIS_FILL, fontSize: 11 }} tickLine={false} axisLine={false} width={40} allowDecimals={false} />
                 <Tooltip contentStyle={{ borderRadius: 8, borderColor: GRID_STROKE, fontSize: 12 }} />
-                <Line type="monotone" dataKey="granted" name="Granted" stroke={GREEN} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                <Line type="monotone" dataKey="granted" name="Granted" stroke={ACCENT} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
                 <Line type="monotone" dataKey="denied" name="Denied" stroke={RED} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -214,7 +213,7 @@ function OverviewView() {
                     endAngle={-270}
                     strokeWidth={0}
                   >
-                    <Cell fill={GREEN} />
+                    <Cell fill={ACCENT} />
                     <Cell fill={RED} />
                   </Pie>
                   <Tooltip contentStyle={{ borderRadius: 8, borderColor: GRID_STROKE, fontSize: 12 }} />
@@ -228,7 +227,7 @@ function OverviewView() {
             <div className="w-full space-y-1.5 text-xs">
               <div className="flex items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-2">
-                  <span className="size-2 rounded-full" style={{ backgroundColor: GREEN }} />
+                  <span className="size-2 rounded-full" style={{ backgroundColor: ACCENT }} />
                   Granted
                 </span>
                 <span className="tabular-nums text-muted-foreground">
@@ -259,7 +258,7 @@ function OverviewView() {
                 <XAxis dataKey="hour" tick={{ fill: AXIS_FILL, fontSize: 10 }} tickLine={false} axisLine={{ stroke: GRID_STROKE }} interval={2} />
                 <YAxis tick={{ fill: AXIS_FILL, fontSize: 11 }} tickLine={false} axisLine={false} width={40} allowDecimals={false} />
                 <Tooltip contentStyle={{ borderRadius: 8, borderColor: GRID_STROKE, fontSize: 12 }} />
-                <Bar dataKey="scans" name="Scans" fill={VIOLET} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="scans" name="Scans" fill={ACCENT} radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

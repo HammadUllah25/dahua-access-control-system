@@ -70,10 +70,12 @@
  *   1. Primitive ramps — hue-named values, never referenced by components.
  *   2. Semantic tokens below them — the only tier components use.
  *   3. The @theme inline mappings above — unchanged pass-through.
- * 40/30/10: neutrals carry the surfaces, petrol carries primary data,
- * status hues (green/amber/red) only ever mean good/caution/alert.
+ * 40/30/10: neutrals carry the surfaces, amber carries the accent.
+ * Status hues (green/amber/red) only ever mean good/caution/alert; the
+ * accent now shares the amber hue, so status badges always pair colour
+ * with an icon + label (blueprint rule) to stay unambiguous.
  * Every text pair below was measured for WCAG contrast; see
- * contrast-check.cjs. Hue distance accent→status is >= 40 deg.
+ * contrast-check.cjs.
  */
 :root {
   /* Neutral ramp (hue 260, cool tint) */
@@ -83,13 +85,12 @@
   --neutral-400: oklch(0.62 0.012 260);
   --neutral-500: oklch(0.5 0.015 260);
   --neutral-900: oklch(0.21 0.02 260);
-  /* Petrol ramp (hue 200) — the one accent ramp */
-  --petrol-100: oklch(0.96 0.02 200);
-  --petrol-600: oklch(0.47 0.09 200);
-  --petrol-700: oklch(0.39 0.075 200);
+  /* Amber ramp (hue 75) — the accent ramp */
+  --amber-100: oklch(0.96 0.05 85);
+  --amber-600: oklch(0.53 0.11 75);
+  --amber-700: oklch(0.45 0.1 75);
   /* Status ramps — only these three exist because only these three render */
   --green-600: oklch(0.51 0.11 155);
-  --amber-600: oklch(0.53 0.11 75);
   --red-600: oklch(0.55 0.2 29);
 
   /* Semantic tokens */
@@ -99,7 +100,7 @@
   --card-foreground: var(--neutral-900);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--neutral-900);
-  --primary: var(--petrol-600);
+  --primary: var(--amber-600);
   --primary-foreground: oklch(1 0 0);
   --secondary: var(--neutral-100);
   --secondary-foreground: var(--neutral-900);
@@ -110,21 +111,21 @@
   --destructive: var(--red-600);
   --border: var(--neutral-200);
   --input: var(--neutral-200);
-  --ring: var(--petrol-600);
-  --chart-1: var(--petrol-600);
-  --chart-2: var(--petrol-700);
+  --ring: var(--amber-600);
+  --chart-1: var(--amber-600);
+  --chart-2: var(--amber-700);
   --chart-3: var(--red-600);
   --chart-4: var(--amber-600);
   --chart-5: var(--neutral-400);
   --radius: 0.625rem;
   --sidebar: var(--neutral-50);
   --sidebar-foreground: var(--neutral-900);
-  --sidebar-primary: var(--petrol-600);
+  --sidebar-primary: var(--amber-600);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: var(--petrol-100);
-  --sidebar-accent-foreground: var(--petrol-700);
+  --sidebar-accent: var(--amber-100);
+  --sidebar-accent-foreground: var(--amber-700);
   --sidebar-border: var(--neutral-200);
-  --sidebar-ring: var(--petrol-600);
+  --sidebar-ring: var(--amber-600);
   --led-green: var(--green-600);
   --led-amber: var(--amber-600);
   --led-red: var(--red-600);
@@ -132,7 +133,7 @@
 
 .dark {
   /* Same ramps, dark steps: neutral ramp brightened at the top,
-     petrol brightened and slightly desaturated, status brightened. */
+     accent and status brightened. */
   --neutral-100: oklch(0.93 0.008 260);
   --neutral-300: oklch(0.68 0.01 260);
   --neutral-600: oklch(0.55 0.012 260);
@@ -140,10 +141,8 @@
   --neutral-800: oklch(0.26 0.015 260);
   --neutral-900: oklch(0.21 0.018 260);
   --neutral-950: oklch(0.165 0.015 260);
-  --petrol-300: oklch(0.82 0.06 200);
-  --petrol-400: oklch(0.72 0.08 200);
-  --petrol-500: oklch(0.56 0.09 200);
-  --petrol-800: oklch(0.30 0.035 200);
+  --amber-300: oklch(0.86 0.12 85);
+  --amber-800: oklch(0.32 0.05 75);
   --green-500: oklch(0.75 0.16 155);
   --amber-500: oklch(0.8 0.14 75);
   --red-500: oklch(0.65 0.19 29);
@@ -155,8 +154,8 @@
   --card-foreground: var(--neutral-100);
   --popover: var(--neutral-900);
   --popover-foreground: var(--neutral-100);
-  --primary: var(--petrol-500);
-  --primary-foreground: oklch(1 0 0);
+  --primary: var(--amber-500);
+  --primary-foreground: var(--neutral-900);
   --secondary: var(--neutral-800);
   --secondary-foreground: var(--neutral-100);
   --muted: var(--neutral-800);
@@ -166,20 +165,20 @@
   --destructive: var(--red-500);
   --border: var(--neutral-700);
   --input: var(--neutral-700);
-  --ring: var(--petrol-500);
-  --chart-1: var(--petrol-400);
-  --chart-2: var(--petrol-300);
+  --ring: var(--amber-500);
+  --chart-1: var(--amber-500);
+  --chart-2: var(--amber-300);
   --chart-3: var(--red-500);
   --chart-4: var(--amber-500);
   --chart-5: var(--neutral-600);
   --sidebar: var(--neutral-900);
   --sidebar-foreground: var(--neutral-100);
-  --sidebar-primary: var(--petrol-500);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: var(--petrol-800);
-  --sidebar-accent-foreground: var(--petrol-300);
+  --sidebar-primary: var(--amber-500);
+  --sidebar-primary-foreground: var(--neutral-900);
+  --sidebar-accent: var(--amber-800);
+  --sidebar-accent-foreground: var(--amber-300);
   --sidebar-border: var(--neutral-700);
-  --sidebar-ring: var(--petrol-500);
+  --sidebar-ring: var(--amber-500);
   --led-green: var(--green-500);
   --led-amber: var(--amber-500);
   --led-red: var(--red-500);
