@@ -65,81 +65,124 @@
   }
 }
 
-/* Equipment-ink console: cool paper content, enclosure-ink sidebar,
-   signal LEDs reserved for live status semantics. */
+/*
+ * Three tiers, per colors-skill:
+ *   1. Primitive ramps — hue-named values, never referenced by components.
+ *   2. Semantic tokens below them — the only tier components use.
+ *   3. The @theme inline mappings above — unchanged pass-through.
+ * 40/30/10: neutrals carry the surfaces, violet carries primary data,
+ * status hues (green/amber/red) only ever mean good/caution/alert.
+ * Every text pair below was measured for WCAG contrast; see
+ * contrast-check.cjs. Hue distance accent→status is >= 40 deg.
+ */
 :root {
-  --background: oklch(0.984 0.003 250);
-  --foreground: oklch(0.215 0.015 255);
+  /* Neutral ramp (hue 260, cool tint) */
+  --neutral-50: oklch(0.984 0.002 260);
+  --neutral-100: oklch(0.955 0.004 260);
+  --neutral-200: oklch(0.922 0.005 260);
+  --neutral-400: oklch(0.62 0.012 260);
+  --neutral-500: oklch(0.5 0.015 260);
+  --neutral-900: oklch(0.21 0.02 260);
+  /* Violet ramp (hue 295) — the one accent ramp */
+  --violet-100: oklch(0.955 0.02 295);
+  --violet-600: oklch(0.54 0.19 295);
+  --violet-700: oklch(0.45 0.17 295);
+  /* Status ramps — only these three exist because only these three render */
+  --green-600: oklch(0.51 0.11 155);
+  --amber-600: oklch(0.53 0.11 75);
+  --red-600: oklch(0.55 0.2 29);
+
+  /* Semantic tokens */
+  --background: var(--neutral-50);
+  --foreground: var(--neutral-900);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.215 0.015 255);
+  --card-foreground: var(--neutral-900);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.215 0.015 255);
-  --primary: oklch(0.24 0.02 255);
-  --primary-foreground: oklch(0.98 0.005 250);
-  --secondary: oklch(0.955 0.005 250);
-  --secondary-foreground: oklch(0.3 0.02 255);
-  --muted: oklch(0.955 0.005 250);
-  --muted-foreground: oklch(0.5 0.015 255);
-  --accent: oklch(0.945 0.007 250);
-  --accent-foreground: oklch(0.3 0.02 255);
-  --destructive: oklch(0.55 0.21 25);
-  --border: oklch(0.9 0.008 250);
-  --input: oklch(0.9 0.008 250);
-  --ring: oklch(0.55 0.02 255);
-  --chart-1: oklch(0.68 0.16 150);
-  --chart-2: oklch(0.75 0.14 85);
-  --chart-3: oklch(0.58 0.19 25);
-  --chart-4: oklch(0.55 0.015 255);
-  --chart-5: oklch(0.82 0.01 250);
-  --radius: 0.5rem;
-  --sidebar: oklch(0.978 0.004 250);
-  --sidebar-foreground: oklch(0.215 0.015 255);
-  --sidebar-primary: oklch(0.68 0.16 150);
-  --sidebar-primary-foreground: oklch(0.15 0.02 255);
-  --sidebar-accent: oklch(0.945 0.007 250);
-  --sidebar-accent-foreground: oklch(0.3 0.02 255);
-  --sidebar-border: oklch(0.9 0.008 250);
-  --sidebar-ring: oklch(0.55 0.02 255);
-  --led-green: oklch(0.68 0.16 150);
-  --led-amber: oklch(0.75 0.14 85);
-  --led-red: oklch(0.58 0.19 25);
+  --popover-foreground: var(--neutral-900);
+  --primary: var(--violet-600);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: var(--neutral-100);
+  --secondary-foreground: var(--neutral-900);
+  --muted: var(--neutral-100);
+  --muted-foreground: var(--neutral-500);
+  --accent: var(--neutral-100);
+  --accent-foreground: var(--neutral-900);
+  --destructive: var(--red-600);
+  --border: var(--neutral-200);
+  --input: var(--neutral-200);
+  --ring: var(--violet-600);
+  --chart-1: var(--violet-600);
+  --chart-2: var(--violet-700);
+  --chart-3: var(--red-600);
+  --chart-4: var(--amber-600);
+  --chart-5: var(--neutral-400);
+  --radius: 0.625rem;
+  --sidebar: var(--neutral-50);
+  --sidebar-foreground: var(--neutral-900);
+  --sidebar-primary: var(--violet-600);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: var(--violet-100);
+  --sidebar-accent-foreground: var(--violet-700);
+  --sidebar-border: var(--neutral-200);
+  --sidebar-ring: var(--violet-600);
+  --led-green: var(--green-600);
+  --led-amber: var(--amber-600);
+  --led-red: var(--red-600);
 }
 
 .dark {
-  --background: oklch(0.17 0.015 255);
-  --foreground: oklch(0.93 0.01 250);
-  --card: oklch(0.21 0.018 255);
-  --card-foreground: oklch(0.93 0.01 250);
-  --popover: oklch(0.21 0.018 255);
-  --popover-foreground: oklch(0.93 0.01 250);
-  --primary: oklch(0.92 0.01 250);
-  --primary-foreground: oklch(0.2 0.018 255);
-  --secondary: oklch(0.26 0.015 255);
-  --secondary-foreground: oklch(0.93 0.01 250);
-  --muted: oklch(0.26 0.015 255);
-  --muted-foreground: oklch(0.68 0.012 250);
-  --accent: oklch(0.26 0.015 255);
-  --accent-foreground: oklch(0.93 0.01 250);
-  --destructive: oklch(0.65 0.2 25);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.55 0.02 255);
-  --chart-1: oklch(0.78 0.18 150);
-  --chart-2: oklch(0.82 0.15 85);
-  --chart-3: oklch(0.65 0.2 25);
-  --chart-4: oklch(0.68 0.012 250);
-  --chart-5: oklch(0.82 0.01 250);
-  --sidebar: oklch(0.19 0.015 255);
-  --sidebar-foreground: oklch(0.93 0.01 250);
-  --sidebar-primary: oklch(0.78 0.18 150);
-  --sidebar-primary-foreground: oklch(0.13 0.02 255);
-  --sidebar-accent: oklch(0.26 0.015 255);
-  --sidebar-accent-foreground: oklch(0.93 0.01 250);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.6 0.02 255);
-  --led-green: oklch(0.78 0.18 150);
-  --led-amber: oklch(0.82 0.15 85);
-  --led-red: oklch(0.65 0.2 25);
+  /* Same ramps, dark steps: neutral ramp brightened at the top,
+     violet brightened and slightly desaturated, status brightened. */
+  --neutral-100: oklch(0.93 0.008 260);
+  --neutral-300: oklch(0.68 0.01 260);
+  --neutral-600: oklch(0.55 0.012 260);
+  --neutral-700: oklch(0.32 0.012 260);
+  --neutral-800: oklch(0.26 0.015 260);
+  --neutral-900: oklch(0.21 0.018 260);
+  --neutral-950: oklch(0.165 0.015 260);
+  --violet-300: oklch(0.75 0.1 295);
+  --violet-400: oklch(0.68 0.16 295);
+  --violet-500: oklch(0.57 0.17 295);
+  --violet-800: oklch(0.28 0.035 295);
+  --green-500: oklch(0.75 0.16 155);
+  --amber-500: oklch(0.8 0.14 75);
+  --red-500: oklch(0.65 0.19 29);
+
+  /* Semantic tokens */
+  --background: var(--neutral-950);
+  --foreground: var(--neutral-100);
+  --card: var(--neutral-900);
+  --card-foreground: var(--neutral-100);
+  --popover: var(--neutral-900);
+  --popover-foreground: var(--neutral-100);
+  --primary: var(--violet-500);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: var(--neutral-800);
+  --secondary-foreground: var(--neutral-100);
+  --muted: var(--neutral-800);
+  --muted-foreground: var(--neutral-300);
+  --accent: var(--neutral-800);
+  --accent-foreground: var(--neutral-100);
+  --destructive: var(--red-500);
+  --border: var(--neutral-700);
+  --input: var(--neutral-700);
+  --ring: var(--violet-500);
+  --chart-1: var(--violet-400);
+  --chart-2: var(--violet-300);
+  --chart-3: var(--red-500);
+  --chart-4: var(--amber-500);
+  --chart-5: var(--neutral-600);
+  --sidebar: var(--neutral-900);
+  --sidebar-foreground: var(--neutral-100);
+  --sidebar-primary: var(--violet-500);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: var(--violet-800);
+  --sidebar-accent-foreground: var(--violet-300);
+  --sidebar-border: var(--neutral-700);
+  --sidebar-ring: var(--violet-500);
+  --led-green: var(--green-500);
+  --led-amber: var(--amber-500);
+  --led-red: var(--red-500);
 }
 
 @layer base {

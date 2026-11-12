@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ToastProvider } from "@/components/toast-provider";
 import "./globals.css";
 
 const plexSans = IBM_Plex_Sans({
@@ -19,11 +20,11 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Dahua Access Console",
-    template: "%s · Dahua Access Console",
+    default: "Washroom Access · Station Admin",
+    template: "%s · Washroom Access",
   },
   description:
-    "Monitor ASI1201E controllers, enrolled people and IC card assignments.",
+    "Station admin console for washroom card access, people, schedules and door events.",
   icons: { icon: "/fevicon.ico" },
 };
 
@@ -34,7 +35,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${plexSans.variable} ${plexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <TooltipProvider>{children}</TooltipProvider>
+        <TooltipProvider>
+          {children}
+          <ToastProvider />
+        </TooltipProvider>
       </body>
     </html>
   );

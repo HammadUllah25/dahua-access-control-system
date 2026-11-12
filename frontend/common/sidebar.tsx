@@ -3,11 +3,15 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-  Activity,
-  Cctv,
-  CreditCard,
+  BarChart3,
+  BellRing,
+  CalendarClock,
+  DoorOpen,
   LayoutDashboard,
+  Radio,
+  ScrollText,
   ScanLine,
+  Settings,
   Users,
 } from "lucide-react"
 
@@ -25,20 +29,35 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
+// Blueprint §2: the 9 station-admin pages, grouped for scanning
 const NAV = [
   {
     label: "Operations",
     items: [
       { title: "Overview", href: "/overview", icon: LayoutDashboard },
-      { title: "Washrooms", href: "/washrooms", icon: Cctv },
-      { title: "Activity", href: "/activity", icon: Activity },
+      { title: "Live Monitoring", href: "/live", icon: Radio },
+      { title: "Access Logs", href: "/logs", icon: ScrollText },
     ],
   },
   {
-    label: "Directory",
+    label: "People & access",
     items: [
-      { title: "People", href: "/persons", icon: Users },
-      { title: "Cards", href: "/cards", icon: CreditCard },
+      { title: "People & Cards", href: "/people", icon: Users },
+      { title: "Access Schedules", href: "/schedules", icon: CalendarClock },
+    ],
+  },
+  {
+    label: "Station",
+    items: [
+      { title: "Device & Door", href: "/device", icon: DoorOpen },
+      { title: "Alerts & Events", href: "/alerts", icon: BellRing },
+    ],
+  },
+  {
+    label: "Insights",
+    items: [
+      { title: "Reports", href: "/reports", icon: BarChart3 },
+      { title: "Settings", href: "/settings", icon: Settings },
     ],
   },
 ]
@@ -55,10 +74,10 @@ function AppSidebar() {
           </span>
           <div className="grid leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight">
-              Dahua Access
+              PumpStation 04
             </span>
             <span className="text-xs text-sidebar-foreground/60">
-              Control console
+              Washroom access · Station Admin
             </span>
           </div>
         </div>
@@ -93,7 +112,7 @@ function AppSidebar() {
             Monitoring active
           </div>
           <p className="font-mono text-[0.6875rem] text-sidebar-foreground/50">
-            NetSDK 3.060, ASI1201E fleet
+            DHI-ASI1201E · NetSDK 3.060
           </p>
         </div>
       </SidebarFooter>
