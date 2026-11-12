@@ -12,7 +12,7 @@ export default function AuthLayout({
       {/* constant left-side brand panel — visible until the dashboard */}
       <AuthBrandPanel />
       <main className="flex items-center justify-center bg-background p-6 sm:p-10">
-        {/* forms size themselves (max-w-sm); onboarding uses a wider column */}
+        {/* forms size themselves (max-w-sm) */}
         <div className="w-full">
           {/* compact brand row for small screens where the panel is hidden */}
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">

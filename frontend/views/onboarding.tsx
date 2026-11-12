@@ -16,10 +16,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DiscoverDevices } from "@/components/onboarding/discover-devices";
 import { InitializeDeviceForm } from "@/components/onboarding/initialize-device-form";
+import { ConnectDevice } from "@/components/onboarding/connect-device";
 import { getInterfacesAction, type InterfaceItem } from "@/actions/get-interfaces";
 import type { DiscoveredDevice } from "@/actions/discover-devices";
 
-const STEPS = ["Network", "Discover Devices", "Initialize Device"] as const;
+const STEPS = [
+  "Network",
+  "Discover Devices",
+  "Initialize Device",
+  "Connect Device",
+] as const;
 
 function Stepper({ current }: { current: number }) {
   return (
@@ -69,6 +75,10 @@ export function OnboardingView() {
   const [manualIp, setManualIp] = useState<string>("");
 
   const [selectedDevice, setSelectedDevice] = useState<DiscoveredDevice | null>(null);
+  const [deviceCredentials, setDeviceCredentials] = useState<{
+    username: string;
+    password: string;
+  } | null>(null);
 
   // Fetch GET /device-initialization/interfaces directly in the View via Server Action
   const applyResult = (res: Awaited<ReturnType<typeof getInterfacesAction>>) => {
@@ -131,7 +141,7 @@ export function OnboardingView() {
           Dahua Controller Onboarding
         </h1>
         <p className="text-sm text-muted-foreground">
-          Detect active local network interfaces, discover Dahua controllers, and create their first admin account.
+          Detect active local network interfaces, discover Dahua controllers, create their first admin account, and connect them to your station.
         </p>
       </div>
 
@@ -337,6 +347,19 @@ export function OnboardingView() {
         <InitializeDeviceForm
           device={selectedDevice}
           onBack={() => setStep(1)}
+          onInitialized={(credentials) => {
+            setDeviceCredentials(credentials);
+            setStep(3);
+          }}
+        />
+      )}
+
+      {/* STEP 4: Connect Device Component (Calls POST /devices) */}
+      {step === 3 && selectedDevice && deviceCredentials && (
+        <ConnectDevice
+          device={selectedDevice}
+          credentials={deviceCredentials}
+          onBack={() => setStep(2)}
         />
       )}
     </div>

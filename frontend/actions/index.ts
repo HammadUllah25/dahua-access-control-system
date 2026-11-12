@@ -9,4 +9,9 @@ export {
   initializeDeviceAction,
   type InitializeDevicePayload,
 } from "./initialize-device";
+export {
+  addDeviceAction,
+  type AddDevicePayload,
+  type DeviceRecord,
+} from "./add-device";
 export type { ServerActionResult } from "./get-interfaces";

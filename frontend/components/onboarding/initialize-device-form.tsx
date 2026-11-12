@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, KeyRound, Loader2, ShieldCheck, User } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -16,11 +15,12 @@ import type { DiscoveredDevice } from "@/actions/discover-devices";
 export function InitializeDeviceForm({
   device,
   onBack,
+  onInitialized,
 }: {
   device: DiscoveredDevice;
   onBack: () => void;
+  onInitialized: (credentials: { username: string; password: string }) => void;
 }) {
-  const router = useRouter();
   const [form, setForm] = useState({
     username: "admin",
     password: "",
@@ -71,8 +71,11 @@ export function InitializeDeviceForm({
           isLoading: false,
           autoClose: 4000,
         });
-        // Immediately redirect to dashboard
-        router.push("/overview");
+        // Hand off to the connect step with the credentials just created.
+        onInitialized({
+          username: form.username.trim(),
+          password: form.password,
+        });
       } else {
         setError(res.error);
         toast.update(toastId, {
