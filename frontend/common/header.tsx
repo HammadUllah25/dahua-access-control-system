@@ -4,6 +4,8 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 
 import { NAV } from "@/common/sidebar";
+import { DeviceStatus } from "@/common/device-status";
+import { ThemeToggle } from "@/common/theme-toggle";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 
@@ -32,11 +34,15 @@ function Header() {
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-1 h-4" />
       <h1 className="text-sm font-medium">{section?.title ?? "Console"}</h1>
-      {today ? (
-        <p className="ml-auto font-mono text-xs text-muted-foreground">
-          {today}
-        </p>
-      ) : null}
+      <div className="ml-auto flex items-center gap-3">
+        <DeviceStatus />
+        {today ? (
+          <p className="hidden font-mono text-xs text-muted-foreground sm:block">
+            {today}
+          </p>
+        ) : null}
+        <ThemeToggle />
+      </div>
     </header>
   );
 }

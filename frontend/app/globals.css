@@ -70,7 +70,7 @@
  *   1. Primitive ramps — hue-named values, never referenced by components.
  *   2. Semantic tokens below them — the only tier components use.
  *   3. The @theme inline mappings above — unchanged pass-through.
- * 40/30/10: neutrals carry the surfaces, violet carries primary data,
+ * 40/30/10: neutrals carry the surfaces, petrol carries primary data,
  * status hues (green/amber/red) only ever mean good/caution/alert.
  * Every text pair below was measured for WCAG contrast; see
  * contrast-check.cjs. Hue distance accent→status is >= 40 deg.
@@ -83,10 +83,10 @@
   --neutral-400: oklch(0.62 0.012 260);
   --neutral-500: oklch(0.5 0.015 260);
   --neutral-900: oklch(0.21 0.02 260);
-  /* Violet ramp (hue 295) — the one accent ramp */
-  --violet-100: oklch(0.955 0.02 295);
-  --violet-600: oklch(0.54 0.19 295);
-  --violet-700: oklch(0.45 0.17 295);
+  /* Petrol ramp (hue 200) — the one accent ramp */
+  --petrol-100: oklch(0.96 0.02 200);
+  --petrol-600: oklch(0.47 0.09 200);
+  --petrol-700: oklch(0.39 0.075 200);
   /* Status ramps — only these three exist because only these three render */
   --green-600: oklch(0.51 0.11 155);
   --amber-600: oklch(0.53 0.11 75);
@@ -99,7 +99,7 @@
   --card-foreground: var(--neutral-900);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--neutral-900);
-  --primary: var(--violet-600);
+  --primary: var(--petrol-600);
   --primary-foreground: oklch(1 0 0);
   --secondary: var(--neutral-100);
   --secondary-foreground: var(--neutral-900);
@@ -110,21 +110,21 @@
   --destructive: var(--red-600);
   --border: var(--neutral-200);
   --input: var(--neutral-200);
-  --ring: var(--violet-600);
-  --chart-1: var(--violet-600);
-  --chart-2: var(--violet-700);
+  --ring: var(--petrol-600);
+  --chart-1: var(--petrol-600);
+  --chart-2: var(--petrol-700);
   --chart-3: var(--red-600);
   --chart-4: var(--amber-600);
   --chart-5: var(--neutral-400);
   --radius: 0.625rem;
   --sidebar: var(--neutral-50);
   --sidebar-foreground: var(--neutral-900);
-  --sidebar-primary: var(--violet-600);
+  --sidebar-primary: var(--petrol-600);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: var(--violet-100);
-  --sidebar-accent-foreground: var(--violet-700);
+  --sidebar-accent: var(--petrol-100);
+  --sidebar-accent-foreground: var(--petrol-700);
   --sidebar-border: var(--neutral-200);
-  --sidebar-ring: var(--violet-600);
+  --sidebar-ring: var(--petrol-600);
   --led-green: var(--green-600);
   --led-amber: var(--amber-600);
   --led-red: var(--red-600);
@@ -132,7 +132,7 @@
 
 .dark {
   /* Same ramps, dark steps: neutral ramp brightened at the top,
-     violet brightened and slightly desaturated, status brightened. */
+     petrol brightened and slightly desaturated, status brightened. */
   --neutral-100: oklch(0.93 0.008 260);
   --neutral-300: oklch(0.68 0.01 260);
   --neutral-600: oklch(0.55 0.012 260);
@@ -140,10 +140,10 @@
   --neutral-800: oklch(0.26 0.015 260);
   --neutral-900: oklch(0.21 0.018 260);
   --neutral-950: oklch(0.165 0.015 260);
-  --violet-300: oklch(0.75 0.1 295);
-  --violet-400: oklch(0.68 0.16 295);
-  --violet-500: oklch(0.57 0.17 295);
-  --violet-800: oklch(0.28 0.035 295);
+  --petrol-300: oklch(0.82 0.06 200);
+  --petrol-400: oklch(0.72 0.08 200);
+  --petrol-500: oklch(0.56 0.09 200);
+  --petrol-800: oklch(0.30 0.035 200);
   --green-500: oklch(0.75 0.16 155);
   --amber-500: oklch(0.8 0.14 75);
   --red-500: oklch(0.65 0.19 29);
@@ -155,7 +155,7 @@
   --card-foreground: var(--neutral-100);
   --popover: var(--neutral-900);
   --popover-foreground: var(--neutral-100);
-  --primary: var(--violet-500);
+  --primary: var(--petrol-500);
   --primary-foreground: oklch(1 0 0);
   --secondary: var(--neutral-800);
   --secondary-foreground: var(--neutral-100);
@@ -166,20 +166,20 @@
   --destructive: var(--red-500);
   --border: var(--neutral-700);
   --input: var(--neutral-700);
-  --ring: var(--violet-500);
-  --chart-1: var(--violet-400);
-  --chart-2: var(--violet-300);
+  --ring: var(--petrol-500);
+  --chart-1: var(--petrol-400);
+  --chart-2: var(--petrol-300);
   --chart-3: var(--red-500);
   --chart-4: var(--amber-500);
   --chart-5: var(--neutral-600);
   --sidebar: var(--neutral-900);
   --sidebar-foreground: var(--neutral-100);
-  --sidebar-primary: var(--violet-500);
+  --sidebar-primary: var(--petrol-500);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: var(--violet-800);
-  --sidebar-accent-foreground: var(--violet-300);
+  --sidebar-accent: var(--petrol-800);
+  --sidebar-accent-foreground: var(--petrol-300);
   --sidebar-border: var(--neutral-700);
-  --sidebar-ring: var(--violet-500);
+  --sidebar-ring: var(--petrol-500);
   --led-green: var(--green-500);
   --led-amber: var(--amber-500);
   --led-red: var(--red-500);
@@ -194,5 +194,31 @@
   }
   html {
     @apply font-sans;
+    color-scheme: light;
   }
+  html.dark {
+    color-scheme: dark;
+  }
+}
+
+/* Pointer cue: card surfaces glow softly in the accent colour on hover.
+   Unlayered on purpose — it must override Tailwind's ring box-shadow. */
+[data-slot="card"],
+.card-glow {
+  transition:
+    box-shadow 200ms ease,
+    background-color 200ms ease;
+}
+[data-slot="card"]:hover,
+.card-glow:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--primary) 30%, transparent),
+    0 10px 30px -14px color-mix(in oklab, var(--primary) 55%, transparent);
+}
+/* Dark mode: the glow reads as the station's green status LED. */
+.dark [data-slot="card"]:hover,
+.dark .card-glow:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--led-green) 30%, transparent),
+    0 10px 30px -14px color-mix(in oklab, var(--led-green) 45%, transparent);
 }

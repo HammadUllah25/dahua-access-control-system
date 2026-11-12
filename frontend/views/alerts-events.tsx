@@ -85,7 +85,7 @@ function AlertsEventsView() {
       {/* summary */}
       <div className="grid grid-cols-3 gap-3">
         {(["Active", "Acknowledged", "Resolved"] as const).map((status) => (
-          <div key={status} className="rounded-lg border bg-card px-3 py-2">
+          <div key={status} className="card-glow rounded-lg border bg-card px-3 py-2">
             <p className="text-xs text-muted-foreground">{status}</p>
             <p className="text-xl font-semibold tabular-nums">{counts[status]}</p>
           </div>

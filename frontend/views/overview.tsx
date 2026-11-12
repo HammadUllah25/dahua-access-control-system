@@ -32,6 +32,8 @@ import { DateRange } from "@/components/dashboard/date-range";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Panel } from "@/components/dashboard/panel";
 import { ResultBadge } from "@/components/dashboard/badges";
+import { AccessRhythm } from "@/components/overview/access-rhythm";
+import { DenialReasons } from "@/components/overview/denial-reasons";
 import { Led } from "@/common/led";
 import {
   Table,
@@ -308,6 +310,12 @@ function OverviewView() {
             </p>
           </dl>
         </Panel>
+      </div>
+
+      {/* row 4: custom recharts panels (no shadcn primitives) */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <AccessRhythm events={events} />
+        <DenialReasons events={events} />
       </div>
 
       {/* recent activity */}

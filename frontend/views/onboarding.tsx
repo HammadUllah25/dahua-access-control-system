@@ -7,8 +7,11 @@ import {
   Edit3,
   Globe,
   Loader2,
+  Mail,
   Network,
+  Phone,
   RefreshCw,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -16,16 +19,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DiscoverDevices } from "@/components/onboarding/discover-devices";
 import { InitializeDeviceForm } from "@/components/onboarding/initialize-device-form";
-import { ConnectDevice } from "@/components/onboarding/connect-device";
 import { getInterfacesAction, type InterfaceItem } from "@/actions/get-interfaces";
 import type { DiscoveredDevice } from "@/actions/discover-devices";
 
-const STEPS = [
-  "Network",
-  "Discover Devices",
-  "Initialize Device",
-  "Connect Device",
-] as const;
+const STEPS = ["Network & Recovery", "Discover Devices", "Initialize Device"] as const;
 
 function Stepper({ current }: { current: number }) {
   return (
@@ -74,47 +71,38 @@ export function OnboardingView() {
   const [selectedIp, setSelectedIp] = useState<string>("");
   const [manualIp, setManualIp] = useState<string>("");
 
+  // Recovery Phone and Recovery Email captured in Network step
+  const [recoveryPhone, setRecoveryPhone] = useState<string>("+92 300 1234567");
+  const [recoveryEmail, setRecoveryEmail] = useState<string>("admin@station.com");
+
   const [selectedDevice, setSelectedDevice] = useState<DiscoveredDevice | null>(null);
-  const [deviceCredentials, setDeviceCredentials] = useState<{
-    username: string;
-    password: string;
-  } | null>(null);
 
   // Fetch GET /device-initialization/interfaces directly in the View via Server Action
-  const applyResult = (res: Awaited<ReturnType<typeof getInterfacesAction>>) => {
-    if (res.success) {
-      setInterfaces(res.data);
-      if (res.data.length > 0 && !selectedIp) {
-        setSelectedIp(res.data[0].ip_address);
-      }
-    } else {
-      setError(res.error);
-      toast.error(res.error);
-    }
-    setLoading(false);
-  };
-
   const fetchInterfaces = async () => {
     setLoading(true);
     setError(null);
     try {
-      applyResult(await getInterfacesAction());
+      const res = await getInterfacesAction();
+      if (res.success) {
+        setInterfaces(res.data);
+        if (res.data.length > 0 && !selectedIp) {
+          setSelectedIp(res.data[0].ip_address);
+        }
+      } else {
+        setError(res.error);
+        toast.error(res.error);
+      }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load interfaces");
+      const msg = err instanceof Error ? err.message : "Failed to load interfaces";
+      setError(msg);
+      toast.error(msg);
+    } finally {
       setLoading(false);
     }
   };
 
-  // initial load: all state updates happen in the async callback
   useEffect(() => {
-    let cancelled = false;
-    getInterfacesAction().then((res) => {
-      if (!cancelled) applyResult(res);
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchInterfaces();
   }, []);
 
   // Effective IP to pass forward
@@ -131,6 +119,12 @@ export function OnboardingView() {
       return;
     }
 
+    // Validate Recovery Email
+    if (!recoveryEmail.includes("@")) {
+      toast.error("Please provide a valid recovery email address");
+      return;
+    }
+
     setStep(1);
   };
 
@@ -141,20 +135,20 @@ export function OnboardingView() {
           Dahua Controller Onboarding
         </h1>
         <p className="text-sm text-muted-foreground">
-          Detect active local network interfaces, discover Dahua controllers, create their first admin account, and connect them to your station.
+          Detect active local network interfaces, configure Dahua password recovery contacts, and initialize controllers.
         </p>
       </div>
 
       <Stepper current={step} />
 
-      {/* STEP 1: Select Network Interface */}
+      {/* STEP 1: Select Network Interface & Recovery Phone/Email */}
       {step === 0 && (
         <section className="space-y-5 rounded-xl border border-border/80 bg-card p-6 shadow-sm">
           <div className="flex items-center justify-between pb-2 border-b border-border/60">
             <div>
-              <h2 className="text-base font-semibold text-foreground">Network Selection</h2>
+              <h2 className="text-base font-semibold text-foreground">Networking & Recovery Contacts</h2>
               <p className="text-xs text-muted-foreground">
-                Select your network adapter or enter its IPv4 address manually.
+                Select your network adapter and define device recovery phone and email.
               </p>
             </div>
             {networkMode === "detected" && (
@@ -210,10 +204,6 @@ export function OnboardingView() {
               {error && !loading && (
                 <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs flex flex-col gap-2">
                   <p className="font-semibold">{error}</p>
-                  <p className="text-rose-600/80 dark:text-rose-400/80">
-                    Make sure the backend service is running locally
-                    (http://127.0.0.1:8000).
-                  </p>
                   <Button size="sm" variant="secondary" onClick={fetchInterfaces} className="w-fit h-7 text-xs">
                     Retry Connection
                   </Button>
@@ -313,6 +303,8 @@ export function OnboardingView() {
             </div>
           )}
 
+
+
           {/* Proceed Button */}
           <div className="pt-3 flex items-center justify-between border-t border-border/60">
             <span className="text-xs text-muted-foreground font-mono">
@@ -320,7 +312,7 @@ export function OnboardingView() {
             </span>
             <Button
               onClick={handleProceed}
-              disabled={!activeIp}
+              disabled={!activeIp || !recoveryPhone.trim() || !recoveryEmail.trim()}
               className="gap-2 text-xs h-9 px-4 font-semibold"
             >
               Proceed to Device Discovery
@@ -346,21 +338,11 @@ export function OnboardingView() {
       {step === 2 && selectedDevice && (
         <InitializeDeviceForm
           device={selectedDevice}
-          onBack={() => setStep(1)}
-          onInitialized={(credentials) => {
-            setDeviceCredentials(credentials);
-            setStep(3);
-          }}
-        />
-      )}
-
-      {/* STEP 4: Connect Device Component (Calls POST /devices) */}
-      {step === 3 && selectedDevice && deviceCredentials && (
-        <ConnectDevice
-          device={selectedDevice}
-          credentials={deviceCredentials}
-          onBack={() => setStep(2)}
-        />
+          // initialPhone={recoveryPhone}
+          // initialEmail={recoveryEmail}
+          onBack={() => setStep(1)} onInitialized={function (credentials: { username: string; password: string; }): void {
+            throw new Error("Function not implemented.");
+          }} />
       )}
     </div>
   );

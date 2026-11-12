@@ -173,7 +173,7 @@ function PeopleCardsView() {
           ["Expired cards", expiredCards],
           ["Blocked cards", blockedCards],
         ].map(([label, value]) => (
-          <div key={label} className="rounded-lg border bg-card px-3 py-2">
+          <div key={label} className="card-glow rounded-lg border bg-card px-3 py-2">
             <p className="text-xs text-muted-foreground">{label}</p>
             <p className="text-xl font-semibold tabular-nums">{value}</p>
           </div>
