@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=APP_NAME,
-    version="0.8.0",
+    version="0.9.0",
     description=(
         "API for Dahua access-controller registration, LAN initialization, monitoring, "
         "people and IC-card management, timed RFID card enrollment, Ethernet adapter discovery, "

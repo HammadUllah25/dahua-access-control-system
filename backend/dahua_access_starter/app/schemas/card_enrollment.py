@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.access_card import AccessCardRead
 
@@ -28,9 +28,6 @@ class CardEnrollmentRead(BaseModel):
 
 class CardEnrollmentConfirm(BaseModel):
     person_id: int = Field(gt=0)
-    # This is the Dahua personnel credential password for UserID + password mode.
-    # It is sent to the controller and is never stored in the application's database.
-    user_password: SecretStr | None = Field(default=None, min_length=1, max_length=63)
     card_name: str | None = Field(default=None, max_length=64)
     card_type: Literal["general", "vip", "guest"] = "general"
     is_valid: bool = True
@@ -38,13 +35,6 @@ class CardEnrollmentConfirm(BaseModel):
     valid_until: date = date(2037, 12, 31)
     door_indices: list[int] = Field(default_factory=lambda: [0], min_length=1, max_length=32)
     time_section_indices: list[int] = Field(default_factory=lambda: [0], min_length=1, max_length=32)
-
-    @field_validator("user_password")
-    @classmethod
-    def validate_password_bytes(cls, value: SecretStr | None) -> SecretStr | None:
-        if value is not None and len(value.get_secret_value().encode("utf-8")) > 63:
-            raise ValueError("user_password must not exceed 63 UTF-8 bytes")
-        return value
 
     @field_validator("card_name")
     @classmethod
@@ -71,5 +61,5 @@ class CardEnrollmentConfirmRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     message: str
-    device_user_id: str
+    person_id: int
     card: AccessCardRead
