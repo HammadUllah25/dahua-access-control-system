@@ -8,7 +8,9 @@ import { toast } from "react-toastify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/auth/forms/password-input";
-import { addDeviceAction } from "@/actions/add-device";
+import { addDeviceAction, type DeviceRecord } from "@/actions/add-device";
+import { getDeviceStatusAction } from "@/actions/get-devices";
+import { updateDeviceAction } from "@/actions/update-device";
 import type { DiscoveredDevice } from "@/actions/discover-devices";
 
 // Step 4 — registers the initialized controller with the station
@@ -19,7 +21,9 @@ export function ConnectDevice({
   onBack,
 }: {
   device: DiscoveredDevice;
-  credentials: { username: string; password: string };
+  // Missing when the controller was initialized outside this onboarding flow
+  // (e.g. the Dahua config tool); the user then types the existing password.
+  credentials?: { username: string; password: string };
   onBack: () => void;
 }) {
   const router = useRouter();
@@ -29,8 +33,8 @@ export function ConnectDevice({
       : `Controller — ${device.ip_address}`,
     host: device.ip_address,
     port: String(device.tcp_port || 37777),
-    username: credentials.username,
-    password: credentials.password,
+    username: credentials?.username ?? "admin",
+    password: credentials?.password ?? "",
   });
   const [connectNow, setConnectNow] = useState(true);
   const [monitoringEnabled, setMonitoringEnabled] = useState(true);
@@ -71,9 +75,9 @@ export function ConnectDevice({
     const toastId = toast.loading("Registering the controller with your station...");
 
     try {
-      const res = await addDeviceAction({
+      const payload = {
         name: form.name.trim(),
-        connection_type: "ip_domain",
+        connection_type: "ip_domain" as const,
         host: form.host.trim(),
         port,
         username: form.username.trim(),
@@ -83,30 +87,92 @@ export function ConnectDevice({
         mac_address: device.mac_address,
         connect_now: connectNow,
         monitoring_enabled: monitoringEnabled,
-      });
+      };
 
-      if (!res.success) {
-        setError(res.error);
+      const res = await addDeviceAction(payload);
+      let record: DeviceRecord | null = res.success ? res.data : null;
+
+      // The same physical controller may already be in the station database
+      // (e.g. re-onboarding). Refresh that row with the credentials just
+      // entered instead of failing on the duplicate serial/MAC check.
+      if (!res.success && res.error.toLowerCase().includes("already registered")) {
+        const serial = device.serial_number?.toUpperCase() ?? "";
+        const mac = device.mac_address?.toUpperCase() ?? "";
+
+        const snapshot = await getDeviceStatusAction();
+        const existing = snapshot.success
+          ? snapshot.data.items.find(
+              (item) =>
+                (serial !== "" && item.serial_number?.toUpperCase() === serial) ||
+                (mac !== "" && item.mac_address?.toUpperCase() === mac)
+            )
+          : undefined;
+
+        if (!existing) {
+          setError(res.error);
+          toast.update(toastId, {
+            render: res.raw ?? res.error,
+            type: "error",
+            isLoading: false,
+            autoClose: 8000,
+          });
+          return;
+        }
+
         toast.update(toastId, {
-          render: res.error,
+          render: `Controller already registered (id ${existing.device_id}) — updating its credentials...`,
+          isLoading: true,
+        });
+
+        const updated = await updateDeviceAction(existing.device_id, {
+          name: payload.name,
+          host: payload.host,
+          port: payload.port,
+          username: payload.username,
+          password: payload.password,
+          monitoring_enabled: monitoringEnabled,
+          reconnect: connectNow,
+        });
+
+        if (!updated.success) {
+          setError(updated.error);
+          toast.update(toastId, {
+            render: updated.raw ?? updated.error,
+            type: "error",
+            isLoading: false,
+            autoClose: 8000,
+          });
+          return;
+        }
+
+        record = updated.data;
+      }
+
+      if (!record) {
+        const message = res.success
+          ? "Device registration returned no data."
+          : res.raw ?? res.error;
+        setError(message);
+        toast.update(toastId, {
+          render: message,
           type: "error",
           isLoading: false,
-          autoClose: 6000,
+          autoClose: 8000,
         });
         return;
       }
 
-      if (res.data.status === "online") {
+      if (record.status === "online") {
         toast.update(toastId, {
-          render: `${res.data.name} is registered and online.`,
+          render: `${record.name} is registered and online.`,
           type: "success",
           isLoading: false,
           autoClose: 4000,
         });
       } else {
         toast.update(toastId, {
-          render: `${res.data.name} is registered, but not connected yet${
-            res.data.last_error ? `: ${res.data.last_error}` : "."
+          render: `${record.name} is registered, but not connected yet${
+            record.last_error ? `: ${record.last_error}` : "."
           }`,
           type: "warning",
           isLoading: false,

@@ -28,7 +28,7 @@ export type DeviceInitializeResponse = {
 
 export type ServerActionResult<T> =
   | { success: true; data: T }
-  | { success: false; error: string };
+  | { success: false; error: string; raw?: string };
 
 // Local backend started with backend\dahua_access_starter\run.bat
 const BASE_URL = process.env.DEVICE_API_BASE_URL || "http://127.0.0.1:8000";
@@ -49,16 +49,19 @@ export async function initializeDeviceAction(
     });
 
     if (!res.ok) {
+      // Return the backend body verbatim so the UI can toast exactly what it said.
+      const raw = await res.text();
       let detail = `Error (${res.status})`;
       try {
-        const errorJson = await res.json();
-        detail = errorJson.detail || JSON.stringify(errorJson);
+        const errorJson = JSON.parse(raw) as { detail?: string };
+        detail = errorJson.detail || raw || detail;
       } catch {
-        detail = await res.text();
+        detail = raw || detail;
       }
       return {
         success: false,
         error: detail,
+        raw: `HTTP ${res.status} — ${raw || detail}`,
       };
     }
 

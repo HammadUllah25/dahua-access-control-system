@@ -7,10 +7,8 @@ import { toast } from "react-toastify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/auth/forms/password-input";
-import {
-  initializeDeviceAction,
-} from "@/actions/initialize-device";
-import type { DiscoveredDevice } from "@/actions/discover-devices";
+import { initializeDeviceAction } from "@/actions/initialize-device";
+import { discoverDevicesAction, type DiscoveredDevice } from "@/actions/discover-devices";
 
 export function InitializeDeviceForm({
   device,
@@ -55,14 +53,67 @@ export function InitializeDeviceForm({
     // Toast loading state
     const toastId = toast.loading("Configuring controller and creating admin account...");
 
-    try {
-      const res = await initializeDeviceAction({
-        mac_address: device.mac_address,
-        local_ip: device.local_ip || device.ip_address,
+    const localIp = device.local_ip || device.ip_address;
+    const submit = (mac: string, ip: string) =>
+      initializeDeviceAction({
+        mac_address: mac,
+        local_ip: ip,
         username: form.username.trim(),
         password: form.password,
         confirm_password: form.confirm,
       });
+
+    try {
+      let res = await submit(device.mac_address, localIp);
+
+      // The backend keeps discovery results in memory for 5 minutes, so a
+      // restart or expiry drops the record. Rediscover once, then retry.
+      if (!res.success && res.error.includes("not found in a recent discovery result")) {
+        toast.update(toastId, {
+          render: `Discovery record expired — rescanning ${localIp}...`,
+          isLoading: true,
+        });
+        const disc = await discoverDevicesAction({ local_ip: localIp, wait_seconds: 5 });
+        if (!disc.success) {
+          setError(disc.error);
+          toast.update(toastId, {
+            render: disc.raw ?? disc.error,
+            type: "error",
+            isLoading: false,
+            autoClose: 8000,
+          });
+          return;
+        }
+
+        const fresh = disc.data.devices.find(
+          (d) => d.mac_address.toUpperCase() === device.mac_address.toUpperCase()
+        );
+        if (!fresh) {
+          const msg = `Device ${device.mac_address} was not found on ${localIp} after rescanning.`;
+          setError(msg);
+          toast.update(toastId, {
+            render: msg,
+            type: "error",
+            isLoading: false,
+            autoClose: 8000,
+          });
+          return;
+        }
+
+        if (fresh.initialization_state !== "uninitialized") {
+          // Already initialized (possibly by the previous attempt) — go register it.
+          toast.update(toastId, {
+            render: `Controller reports "${fresh.initialization_state}" — continuing to connect.`,
+            type: "info",
+            isLoading: false,
+            autoClose: 4000,
+          });
+          onInitialized({ username: form.username.trim(), password: form.password });
+          return;
+        }
+
+        res = await submit(fresh.mac_address, fresh.local_ip);
+      }
 
       if (res.success) {
         toast.update(toastId, {
@@ -79,10 +130,10 @@ export function InitializeDeviceForm({
       } else {
         setError(res.error);
         toast.update(toastId, {
-          render: res.error,
+          render: res.raw ?? res.error,
           type: "error",
           isLoading: false,
-          autoClose: 5000,
+          autoClose: 8000,
         });
       }
     } catch (err: unknown) {

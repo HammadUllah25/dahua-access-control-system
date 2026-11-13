@@ -19,10 +19,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DiscoverDevices } from "@/components/onboarding/discover-devices";
 import { InitializeDeviceForm } from "@/components/onboarding/initialize-device-form";
+import { ConnectDevice } from "@/components/onboarding/connect-device";
 import { getInterfacesAction, type InterfaceItem } from "@/actions/get-interfaces";
 import type { DiscoveredDevice } from "@/actions/discover-devices";
 
-const STEPS = ["Network & Recovery", "Discover Devices", "Initialize Device"] as const;
+const STEPS = [
+  "Network & Recovery",
+  "Discover Devices",
+  "Initialize Device",
+  "Connect Device",
+] as const;
 
 function Stepper({ current }: { current: number }) {
   return (
@@ -76,6 +82,11 @@ export function OnboardingView() {
   const [recoveryEmail, setRecoveryEmail] = useState<string>("admin@station.com");
 
   const [selectedDevice, setSelectedDevice] = useState<DiscoveredDevice | null>(null);
+  const [needsInit, setNeedsInit] = useState(true);
+  const [initCredentials, setInitCredentials] = useState<{
+    username: string;
+    password: string;
+  } | null>(null);
 
   // Fetch GET /device-initialization/interfaces directly in the View via Server Action
   const fetchInterfaces = async () => {
@@ -328,7 +339,12 @@ export function OnboardingView() {
           initialIp={activeIp}
           onSelected={(device) => {
             setSelectedDevice(device);
-            setStep(2);
+            setInitCredentials(null);
+            // A controller that is already initialized only needs registering,
+            // so skip the initialize step instead of hitting a guaranteed 409.
+            const uninitialized = device.initialization_state === "uninitialized";
+            setNeedsInit(uninitialized);
+            setStep(uninitialized ? 2 : 3);
           }}
           onBack={() => setStep(0)}
         />
@@ -338,11 +354,21 @@ export function OnboardingView() {
       {step === 2 && selectedDevice && (
         <InitializeDeviceForm
           device={selectedDevice}
-          // initialPhone={recoveryPhone}
-          // initialEmail={recoveryEmail}
-          onBack={() => setStep(1)} onInitialized={function (credentials: { username: string; password: string; }): void {
-            throw new Error("Function not implemented.");
-          }} />
+          onBack={() => setStep(1)}
+          onInitialized={(credentials) => {
+            setInitCredentials(credentials);
+            setStep(3);
+          }}
+        />
+      )}
+
+      {/* STEP 4: Connect Device Component (Calls POST /devices) */}
+      {step === 3 && selectedDevice && (
+        <ConnectDevice
+          device={selectedDevice}
+          credentials={initCredentials ?? undefined}
+          onBack={() => setStep(needsInit ? 2 : 1)}
+        />
       )}
     </div>
   );

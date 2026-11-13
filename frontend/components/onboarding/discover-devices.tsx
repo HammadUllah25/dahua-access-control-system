@@ -45,18 +45,18 @@ export function DiscoverDevices({
         setDevices(res.data.devices);
         setHasScanned(true);
         toast.update(toastId, {
-          render: `Found ${res.data.count} controller(s) on ${localIp}`,
+          render: `Found ${res.data.count} controller(s) · searched ${res.data.searched_local_ips.join(", ")}`,
           type: "success",
           isLoading: false,
-          autoClose: 3000,
+          autoClose: 4000,
         });
       } else {
         setError(res.error);
         toast.update(toastId, {
-          render: res.error,
+          render: res.raw ?? res.error,
           type: "error",
           isLoading: false,
-          autoClose: 5000,
+          autoClose: 8000,
         });
       }
     } catch (err: unknown) {
@@ -191,7 +191,7 @@ export function DiscoverDevices({
         <div className="space-y-3 pt-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>Found {devices.length} controller(s)</span>
-            <span>Click device to initialize</span>
+            <span>Click a device to continue</span>
           </div>
 
           {devices.length === 0 ? (
@@ -236,10 +236,16 @@ export function DiscoverDevices({
                       <div className="text-[11px] text-muted-foreground font-mono">
                         SN: {device.serial_number || "—"} &bull; Subnet: {device.subnet_mask || "—"}
                       </div>
+
+                      {!isUninit && (
+                        <div className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                          Already initialized — continue to connect with your controller password.
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1.5 text-primary text-xs font-semibold group-hover:translate-x-1 transition-transform pl-3">
-                      <span>Setup</span>
+                      <span>{isUninit ? "Setup" : "Connect"}</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </div>
                   </button>

@@ -15,4 +15,8 @@ export {
   type DeviceRecord,
 } from "./add-device";
 export { getDeviceStatusAction } from "./get-devices";
+export {
+  updateDeviceAction,
+  type UpdateDevicePayload,
+} from "./update-device";
 export type { ServerActionResult } from "./get-interfaces";
