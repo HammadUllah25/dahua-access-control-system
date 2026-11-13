@@ -7,10 +7,21 @@ FastAPI backend for Dahua ASI1201E access controllers using the Dahua NetSDK Pyt
 - Device registration, connection/disconnection and automatic TCP health monitoring.
 - Central personnel records (`/persons`).
 - IC/MIFARE card assignment to a specific controller (`/devices/{device_id}/cards`).
-- Scan-to-enroll workflow: capture a card UID, create the controller personnel profile with optional UserID+password, and register the card (`/devices/{device_id}/card-enrollments`).
+- Scan-to-enroll workflow: capture a card UID, write a controller IC-card record, and link it to the selected central person (`/devices/{device_id}/card-enrollments`).
 - Native controller card query (`/devices/{device_id}/cards/device-records`).
 - Native controller card insert, update and remove through NetSDK record-set operations.
 - Person-to-card assignment lookup across registered controllers (`/persons/{person_id}/cards`).
+
+## Windows installation (provided SDK wheel)
+
+1. Extract this `dahua_access_starter` folder to your backend directory.
+2. Keep your existing `data/dahua_access.db`, `data/device_secret.key`, and any local `.env` file. Do not replace them with files from another machine.
+3. Double-click `install.bat`. It creates the project-local `.venv`, installs `requirements.txt`, installs the bundled Dahua NetSDK wheel from `vendor/`, and runs a setup check.
+4. Double-click `run.bat` to start the API.
+5. Open `http://127.0.0.1:8000/docs`.
+
+The project-local `.venv` is intentional: the NetSDK wheel must be installed into the same interpreter that starts Uvicorn. Do not rely on a separate `backend/venv` or a globally installed Python package.
+
 
 
 ## Factory-reset device initialization
@@ -72,10 +83,10 @@ After successful initialization, register it through the existing `POST /devices
 ### Verify the installed SDK declarations
 
 ```powershell
-..\venv\Scripts\python.exe tools\verify_initialization_sdk.py
+.\.venv\Scripts\python.exe tools\verify_initialization_sdk.py
 ```
 
-This check validates the ctypes structures and enums without loading the native DLL or changing a controller. The mocked orchestration test can be run with `..\venv\Scripts\python.exe tools\test_initialization_mock.py` (with the NetSDK wheel installed). The native discovery/initialization calls still need to be run on the Windows PC with the ASI1201E on the same LAN. Keep the SDK installed in the existing venv; this project archive does not bundle Dahua's proprietary DLLs.
+This check validates the ctypes structures and enums without loading the native DLL or changing a controller. The mocked orchestration test can be run with `.\.venv\Scripts\python.exe tools\test_initialization_mock.py` after `install.bat`. The native discovery/initialization calls still need to be run on the Windows PC with the ASI1201E on the same LAN. The release bundle includes the Dahua NetSDK Windows x64 wheel and installs it in the project-local `.venv`.
 
 ## IC card compatibility
 
@@ -97,7 +108,7 @@ The access-card CRUD implementation uses:
 - `NetClient.ControlDevice(..., CtrlType.RECORDSET_REMOVE, ...)`
 - `NetClient.FindRecord`, `FindNextRecord`, and `FindRecordClose` with `EM_NET_RECORD_TYPE.ACCESSCTLCARD`
 
-The SDK's `NET_RECORDSET_ACCESS_CTL_CARD` declaration marks `szUserID` as unsupported on this legacy record format. Therefore `Person` is the central application record, while `szCardName`, card UID, validity, door indexes and time-section indexes are synchronized to the controller. The application keeps the `person_id` ↔ device-card assignment mapping. Creating/updating a `/persons` record changes the central database only; ordinary direct assignment through `/devices/{device_id}/cards` writes the physical card record. The scan-to-enroll confirmation flow additionally creates a separate Dahua personnel profile (using `person_code` as UserID). If a person's name changes, update the card's `card_name` separately when you want the controller display name changed.
+The SDK's `NET_RECORDSET_ACCESS_CTL_CARD` declaration marks `szUserID` as unsupported on this legacy record format. Therefore `Person` is the central application record, while `szCardName`, card UID, validity, door indexes and time-section indexes are synchronized to the controller. The application keeps the `person_id` ↔ device-card assignment mapping. Creating/updating a `/persons` record changes the central database only; both direct assignment and scan-to-enroll confirmation use the same physical card-record insertion path. If a person's name changes, update the card's `card_name` separately when you want the controller display name changed.
 
 ## Important permission/index note
 
@@ -107,26 +118,21 @@ The SDK card structure stores validity as `NET_TIME` and its comments state that
 
 ## Verify the IC-card SDK structures
 
-Run this after the wheel is installed in the existing venv:
+Run this after `install.bat` has installed the wheel into the project-local `.venv`:
 
 ```powershell
-..\venv\Scripts\python.exe tools\verify_card_sdk.py
+.\.venv\Scripts\python.exe tools\verify_card_sdk.py
 ```
 
 The verifier checks the exact enum values, ctypes field names and structure sizes used by this module. It does not initialize the native DLL or modify the physical controller.
 
-## Install / run on the existing Windows venv
+## Install / run on Windows
 
-From `C:\Dahua-Standalone\dahua_access_starter`:
-
-```powershell
-..\venv\Scripts\python.exe -m pip install -r requirements.txt
-..\venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
+Run `install.bat` once to create `.venv` and install the requirements plus the bundled Dahua SDK wheel. Then run `run.bat`. Both scripts explicitly use `.venv\Scripts\python.exe`; a separate parent `backend\venv` is not used.
 
 Open `http://127.0.0.1:8000/docs`.
 
-Keep the existing `data` folder, `device_secret.key`, SQLite database and `venv`. New `persons` and `access_cards` tables are created automatically on startup; existing device data is preserved.
+Keep your existing `data` folder, `device_secret.key`, and SQLite database when replacing the source. The installer creates a fresh project-local `.venv`. Existing device/person/card data is preserved; startup migrations are additive.
 
 ## API workflow
 
@@ -183,6 +189,8 @@ If `card_name` is omitted, the person's name is sent as the device card name.
 }
 ```
 
+The native update path initializes `NET_OUT_FIND_RECORD_PARAM.dwSize` before calling `FindRecord`. When the card UID is unchanged, it skips the separate duplicate-UID lookup and performs only the record reload needed for the update. A successful SDK return means the controller accepted the write; verify the card record and test with a spare card before relying on a validity change for access revocation.
+
 ### 6. Delete a controller card assignment
 
 `DELETE /devices/2/cards/{assignment_id}`
@@ -221,15 +229,15 @@ Repeated imports are idempotent for the same device/card pair.
 
 `GET /devices/{device_id}/cards/device-records` reads card records and, when the card record includes a controller user ID, also attempts a separate Dahua personnel lookup. The response includes `person_profile` and `person_profile_error`; a card record remains available even if the device firmware does not support the personnel lookup.
 
-For an isolated person lookup, use `GET /devices/{device_id}/person-records/{device_user_id}`. For example, the existing card record returned user ID `101`, so test `GET /devices/2/person-records/101`.
+The separate personnel-profile lookup (`GET /devices/{device_id}/person-records/{device_user_id}`) is optional and firmware-dependent. For ASI1201E-family devices it returns HTTP 501 by design and is not part of the card-record workflow; use `GET /persons` and `GET /devices/{device_id}/cards` to view the central person and its application card assignments. The native card-record list also skips the personnel service on these devices.
 
-The response now includes the SDK fields relevant to the SmartPSS Lite Basic Info and Card panels: device person ID/name/type/status, department, validity dates, usage-limit value, password-presence flag, card issue/creation timestamp, card status/type/UID, door and time-section indexes, plus additional non-secret profile/card metadata where the controller returns it.
+The card-record response includes the fields available from the native card record: card status/type/UID, validity dates, creation timestamp when populated, door and time-section indexes, and additional non-secret card metadata. Personnel profile fields are separate and may not be supported by every controller/firmware.
 
 **Credential and biometric handling:** the API never returns `szPsw`, the card password itself, or raw face-template bytes. It returns only `password_configured` and a face-template count. Face photographs/templates use a separate Dahua face service; the example SmartPSS Lite screenshot shows placeholder silhouettes rather than uploaded images.
 
 **Date limitation:** the `NET_RECORDSET_ACCESS_CTL_CARD` structure in the supplied NetSDK exposes `stuCreateTime` (card-record creation time) but no card-record modification timestamp. The person service exposes `stuUpdateTime` for the person profile, which is returned separately as `person_profile.update_time`; it must not be presented as the card's change date.
 
-The new personnel lookup uses `OperateAccessUserService` and is not yet verified against the physical ASI1201E in this project. Run the two GET endpoints above on the controller and share the responses; firmware support and populated fields must be confirmed on the actual device.
+The optional personnel lookup uses `OperateAccessUserService`; it is not called by the ASI1201E card-enrollment confirmation flow. The observed ASI1201E installation returned SDK error `0x00000015` for this lookup, so the feature should be treated as unverified/firmware-dependent until tested independently.
 
 ---
 
@@ -245,7 +253,7 @@ The scan-to-enroll workflow listens to the selected controller's Dahua access-co
 3. Present the physical IC card to the ASI1201E reader.
 4. Poll `GET /devices/{device_id}/card-enrollments/{session_token}` until `status` becomes `captured`.
 5. Confirm using `POST /devices/{device_id}/card-enrollments/{session_token}/confirm`.
-6. The backend creates the Dahua personnel profile (person code as device UserID, name, optional UserID+password credential and permissions), writes the captured UID as an IC-card record, and saves the application assignment.
+6. The backend writes the captured UID as a Dahua IC-card record through the same legacy record-set insert path used by direct card assignment, then saves the application person/card assignment in SQLite.
 
 Start request:
 
@@ -260,26 +268,26 @@ Confirm request (the card number is intentionally taken from the captured event;
 ```json
 {
   "person_id": 1,
-  "user_password": "246810",
+  "card_name": "Hammad RFID Card",
   "card_type": "general",
   "is_valid": true,
-  "valid_from": "2026-11-11",
+  "valid_from": "2026-11-12",
   "valid_until": "2037-12-31",
   "door_indices": [0],
   "time_section_indices": [0]
 }
 ```
 
-`user_password` is Dahua's personnel `UserID + password` credential stored in `NET_ACCESS_USER_INFO.szPsw`; it is not the device administrator password. The backend sends it to the controller and does not persist or return it. The device UserID is the person's `person_code`, which must fit within 31 UTF-8 bytes. The full name is sent through the SDK extended-name field. The card UID is stored separately in the controller card record and linked to the central `person_id` in the application's database; the legacy card structure's `szUserID` field is not assumed to be supported by ASI1201E firmware.
+The confirmation endpoint does not create a separate Dahua personnel profile. It writes the card record using the existing `CLIENT_ControlDevice` / `RECORDSET_INSERT` implementation and stores the relationship to `person_id` in the central application database. This avoids making enrollment depend on the optional `OperateAccessUserService` personnel lookup that failed with SDK error `0x00000015` on the reported ASI1201E installation. The device-side `szUserID` field is not relied upon for this model/workflow.
 
 Additional endpoints:
 
 - `GET /devices/{device_id}/card-enrollments/{session_token}` — poll enrollment status and captured UID.
 - `DELETE /devices/{device_id}/card-enrollments/{session_token}` — cancel an unfinished enrollment.
 
-Only one active enrollment is allowed per device at a time. Enrollment sessions are held in backend memory and are cleared when the API process restarts. A failed confirmation leaves the captured UID available for retry. If user creation succeeds but card registration fails, the backend attempts to remove the newly created device user as compensation.
+Only one active enrollment is allowed per device at a time. Enrollment sessions are held in backend memory and are cleared when the API process restarts. A failed confirmation leaves the captured UID available for retry. The normal card-assignment helper attempts a compensating controller-card delete if the hardware insert succeeds but the local database commit fails; verify controller records if that cleanup reports an error.
 
-**Hardware verification required:** the SDK structures and insert/remove operations are derived from the supplied NetSDK 3.060 Python wheel, but this environment cannot verify that the ASI1201E firmware reports an unknown card UID or accepts the personnel INSERT operation. Test with one spare card and one test person first. Confirm `status=captured`, then inspect `GET /devices/{device_id}/cards/device-records` and the person lookup endpoint before using this for real access credentials.
+**Hardware verification required:** the SDK structures and insert/remove operations are checked against the supplied NetSDK 3.060 Python wheel, but this environment cannot verify that the ASI1201E firmware reports an unknown card UID or accepts the native card INSERT operation. Test with one spare card and one test person first. Confirm `status=captured`, then inspect `GET /devices/{device_id}/cards/device-records` and `GET /devices/{device_id}/cards`. Finally test the physical door and its configured schedule before using real access credentials.
 
 ## Live Access Events (ASI1201E)
 

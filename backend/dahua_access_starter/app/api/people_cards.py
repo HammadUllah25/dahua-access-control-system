@@ -44,6 +44,11 @@ def _device_or_404(db: Session, device_id: int) -> Device:
     return device
 
 
+def _uses_asi1201e_card_record_workflow(device: Device) -> bool:
+    """Return True for ASI1201E-family models handled as card-record devices here."""
+    return "ASI1201E" in (device.model or "").upper()
+
+
 def _ensure_connected(device: Device, db: Session) -> None:
     previous_status = device.status
     try:
@@ -155,12 +160,10 @@ def _write_card_assignment(
     device_id: int,
     payload: AccessCardCreate,
     db: Session,
-    *,
-    card_number_override: str | None = None,
 ) -> AccessCard:
     device = _device_or_404(db, device_id)
     person = _person_or_404(db, payload.person_id)
-    card_number = (card_number_override or payload.card_number).upper()
+    card_number = payload.card_number.upper()
     duplicate = db.query(AccessCard).filter(
         AccessCard.device_id == device_id,
         AccessCard.card_number == card_number,
@@ -305,20 +308,24 @@ def confirm_card_enrollment(
     payload: CardEnrollmentConfirm,
     db: Session = Depends(get_db),
 ):
-    """Create the Dahua personnel profile, write the captured card, and save its app assignment."""
-    device = _device_or_404(db, device_id)
+    """Write the captured IC card record and link it to the selected app person.
+
+    The ASI1201E enrollment path uses the legacy card-record API implemented by
+    ``_write_card_assignment``. The central Person record is authoritative for
+    the person-to-card relationship; confirmation does not create a separate
+    controller personnel profile through OperateAccessUserService.
+    """
     person = _person_or_404(db, payload.person_id)
     try:
         enrollment = enrollment_service.claim_for_confirmation(device_id, session_token)
     except CardEnrollmentError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    card_number = enrollment.card_number or ""
-    user_id = person.person_code
-    device_user_created = False
     try:
-        # Validate the captured UID against the same hexadecimal UID rules used
-        # by the ordinary card-assignment API before writing anything to hardware.
+        card_number = enrollment.card_number or ""
+        # Reuse the same validation and legacy RECORDSET_INSERT path as the
+        # ordinary POST /devices/{device_id}/cards endpoint. The UID comes only
+        # from the captured enrollment event, never from the confirmation body.
         try:
             card_payload = AccessCardCreate(
                 person_id=person.id,
@@ -337,47 +344,11 @@ def confirm_card_enrollment(
                 detail=f"The captured card UID is not a supported hexadecimal IC UID: {exc}",
             ) from exc
 
-        _ensure_connected(device, db)
-        try:
-            access_cards.add_device_user(
-                device_id,
-                user_id=user_id,
-                name=person.name,
-                password=payload.user_password.get_secret_value() if payload.user_password else None,
-                department=person.department,
-                phone_number=person.phone,
-                valid_from=payload.valid_from,
-                valid_until=payload.valid_until,
-                door_indices=payload.door_indices,
-                time_section_indices=payload.time_section_indices,
-            )
-            device_user_created = True
-        except AccessCardSDKError as exc:
-            message = str(exc)
-            lowered = message.lower()
-            code = 409 if "already exists" in lowered else (422 if "must fit" in lowered or "exceeds" in lowered else 502)
-            raise HTTPException(status_code=code, detail=f"Could not create the Dahua personnel profile: {message}") from exc
-
-        try:
-            assignment = _write_card_assignment(
-                device_id,
-                card_payload,
-                db,
-                card_number_override=card_number,
-            )
-        except Exception:
-            if device_user_created:
-                try:
-                    access_cards.delete_device_user(device_id, user_id)
-                except AccessCardSDKError:
-                    # Preserve the original error; the controller user may need manual cleanup.
-                    pass
-            raise
-
+        assignment = _write_card_assignment(device_id, card_payload, db)
         enrollment_service.confirmation_succeeded(device_id, session_token)
         return {
-            "message": "Dahua personnel profile and captured card were registered successfully.",
-            "device_user_id": user_id,
+            "message": "Captured card was registered on the Dahua controller and linked to the application person.",
+            "person_id": person.id,
             "card": assignment,
         }
     except Exception:
@@ -409,7 +380,15 @@ def list_controller_cards(device_id: int, db: Session = Depends(get_db)):
     # A card row and a person profile are separate records in Dahua NetSDK.
     # Link them through szUserID when the controller supplies it. Keep the card
     # result available even when the firmware does not implement person lookup.
-    user_ids = list(dict.fromkeys(
+    # The ASI1201E card workflow keeps the person link in the application DB;
+    # do not invoke its separately failing/optional personnel-service GET API.
+    uses_legacy_workflow = _uses_asi1201e_card_record_workflow(device)
+    if uses_legacy_workflow:
+        # Do not surface the legacy record's unlinked szUserID bytes as a person
+        # identity; the authoritative link is the application's AccessCard row.
+        for row in rows:
+            row["device_user_id"] = None
+    user_ids = [] if uses_legacy_workflow else list(dict.fromkeys(
         row.get("device_user_id") for row in rows if row.get("device_user_id")
     ))
     profiles: dict[str, dict] = {}
@@ -436,12 +415,21 @@ def list_controller_cards(device_id: int, db: Session = Depends(get_db)):
 @router.get(
     "/devices/{device_id}/person-records/{device_user_id}",
     response_model=DevicePersonProfileRead,
+    responses={501: {"description": "Separate personnel lookup is not enabled for ASI1201E card-record devices."}},
 )
 def get_controller_person_record(
     device_id: int, device_user_id: str, db: Session = Depends(get_db)
 ):
     """Read one native Dahua person record by its controller-side user ID."""
     device = _device_or_404(db, device_id)
+    if _uses_asi1201e_card_record_workflow(device):
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "Separate Dahua personnel-profile lookup is not enabled for the ASI1201E card-record workflow. "
+                "Use GET /persons and GET /devices/{device_id}/cards for application personnel/card assignments."
+            ),
+        )
     _ensure_connected(device, db)
     try:
         row = access_cards.get_device_user_record(device_id, device_user_id)

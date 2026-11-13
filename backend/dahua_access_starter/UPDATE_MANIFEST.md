@@ -1,45 +1,35 @@
-# Update manifest
+# ASI1201E card enrollment update
 
-This build layers the latest user-provided device identity API and the post-archive changes described in the conversation onto the most recent complete backend starter archive available in the conversation.
+## Changed behavior
 
-## Preserved backend features
+- Reworked `POST /devices/{device_id}/card-enrollments/{session_token}/confirm` to use the existing card-record assignment function directly.
+- The confirmation flow no longer calls `OperateAccessUserService(GET/INSERT/REMOVE)` and no longer creates a separate controller personnel profile.
+- The selected central application person is linked to the captured card UID in SQLite.
+- Removed `user_password` from the confirmation request schema because the ASI1201E card-only workflow does not submit a separate personnel credential.
+- Confirmation response now returns `person_id` and the saved `card` assignment; it no longer implies a device-side personnel UserID exists.
+- The direct personnel-profile endpoint returns HTTP 501 for ASI1201E-family models, and native card-record listing skips the optional personnel-service lookup on these models.
+- Corrected the Windows setup scripts to create a local `.venv` and install the provided Dahua NetSDK wheel into that environment.
+- Added an offline confirmation-flow regression test and a setup diagnostic.
 
-- Dahua NetSDK initialization and login adapter
-- Device registration, connection, disconnection, deletion, health checks, and monitoring
-- Serial-number and MAC-address duplicate prevention (private host/IP addresses are not globally unique)
-- LAN discovery and first-time device account initialization
-- Person records, access-card assignments, device card synchronization/import, and their existing APIs
-- Existing SQLite tables and additive migrations for monitoring, import metadata, and device identity
+## Preserved behavior
 
-## Added/updated in this build
+Device discovery/initialization, login/session management, alarm listening, scan-to-enroll capture, device monitoring, events, people CRUD, direct card CRUD, card import, and existing SQLite model/schema behavior remain in place.
 
-- Alarm event subscription using `SetDVRMessCallBackEx1` and `StartListenEx`
-- `NET_A_ALARM_ACCESS_CTL_EVENT_INFO` parser for card number, user ID, name, reader, door, direction, event time, raw status, and error code
-- `bStatus` mapping (`TRUE` = `granted`, `FALSE` = `denied`) per the vendor SDK structure comment
-- Background event persistence into SQLite `access_events`
-- REST endpoints for access-event history, details, and summary counters
-- Timed scan-to-enroll sessions that capture a card UID from the access-event callback
-- Dahua personnel profile INSERT/REMOVE operations using `OperateAccessUserService` and `NET_ACCESS_USER_INFO`
-- Confirmation endpoint that creates a device personnel profile, writes the captured card UID, and saves the central person/card assignment with compensating cleanup on failure
-- Optional UserID+password credential in `NET_ACCESS_USER_INFO.szPsw`; the secret is sent to the controller only and is not stored in the application database
-- Shared Ethernet-only IPv4 adapter filtering for both network and device-initialization interface endpoints
-- Correct use of `socket.AF_INET` in adapter enumeration
-- Safe replacement instructions that protect `.env` and the existing database
+## Data safety
 
-## Scope and verification limits
+The release ZIP intentionally excludes `data/dahua_access.db`, `data/device_secret.key`, `.env`, and any virtual environment. Keep/restore your local database and encryption key. Losing `device_secret.key` prevents decrypting stored device passwords.
 
-- This is the FastAPI backend starter folder, not the user's entire parent Git repository or a separate frontend/dashboard project.
-- Local `.env`, the user's SQLite database, virtual environment, and the Dahua SDK wheel are intentionally excluded.
-- Source syntax, SQLite migrations, endpoint behavior, duplicate identity checks, event decoding, event persistence, and summary counts were tested in an offline container.
-- A live subscription, unknown-card UID capture, personnel INSERT/REMOVE, and physical card-scan test on the user's ASI1201E have not been performed from this build environment.
+## Verification boundary
 
+Python compilation, API import, schema validation, and the offline confirmation-flow regression test run without a controller. The physical Dahua DLL/API call cannot be tested in this environment; a one-card test against the ASI1201E is still required before production use.
 
-## Live dashboard status integration
+## Card-update lookup correction
 
-- `GET /devices/status` returns the initial device status snapshot and aggregate counts without credentials.
-- `GET /devices/monitor/status` exposes monitor health/configuration.
-- `WS /ws/devices` sends the initial snapshot, status-transition events, deletion events, and 25-second heartbeats. An optional `device_id` query parameter narrows the stream.
-- Status changes from background monitoring and manual connect/disconnect/update/delete operations are published to connected WebSocket clients.
-- Added `app/services/realtime.py`, `app/api/realtime.py`, and `docs/NEXTJS_DEVICE_STATUS_INTEGRATION.md`.
-- The monitor checks TCP reachability plus a local SDK login session; it does not rely on WebSocket state and continues running when dashboards are disconnected.
-- Local test coverage: REST status routes, WebSocket snapshot, ping/pong, and background-thread status-event delivery. Physical controller behavior is not newly changed by this update.
+- Fixed `_find_native_records()` to initialize `NET_OUT_FIND_RECORD_PARAM.dwSize` before `FindRecord`. The previous method omitted this required SDK structure-size field, although the normal card-list query initialized it.
+- The update path now skips the duplicate-UID lookup when the card UID is unchanged, avoiding an unnecessary native query. If the UID changes, the duplicate check remains in place.
+- Added `tools/test_card_update_mock.py`, which uses the bundled SDK ctypes declarations and a fake client to check `dwSize`, original record-number preservation, and the `RECORDSET_UPDATE` call. This test does not connect to a physical device.
+- No database, device key, environment file, or installed virtual environment is included in the patched ZIP.
+
+## Verification boundary
+
+The lookup initialization fix is covered by an offline mock test. The real ASI1201E must still be tested using a spare card: the mock cannot establish whether this firmware accepts `RECORDSET_UPDATE` or whether setting `bIsValid=False` revokes physical access.

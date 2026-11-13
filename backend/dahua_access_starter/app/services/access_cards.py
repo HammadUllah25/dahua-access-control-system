@@ -81,12 +81,13 @@ def _optional_text(value: Any) -> str | None:
 
 
 class DahuaAccessCardService:
-    """NetSDK access-card operations for first-generation access controllers.
+    """NetSDK legacy record-set access-card operations used by the ASI1201E workflow.
 
     IC/MIFARE is represented by the hexadecimal card UID stored in szCardNo.
-    The SDK structure marks szUserID as unsupported on some controllers, so the
-    central Person record remains authoritative and szCardName is copied to the
-    device as the display name.
+    For the ASI1201E enrollment workflow, the central Person record remains
+    authoritative and the controller receives a card record with the display
+    name and access permissions. The optional personnel-service methods below
+    are kept for other compatible controllers and are not used by this flow.
     """
 
     def __init__(self) -> None:
@@ -432,16 +433,19 @@ class DahuaAccessCardService:
                 len(packed_user_ids),
             )
 
+            # Dahua's documented NET_ACCESS_USER_SERVICE_GET example allocates
+            # backing storage for the floor extension and NET_ACCESS_USER_INFO_EX
+            # for every output record. The base record contains native pointers
+            # to these buffers; passing a zero-filled record with NULL pointers can
+            # fail the SDK's internal output-buffer verification on some builds.
+            # Keep these backing objects alive until OperateAccessUserService
+            # returns. EX2/EX3 remain NULL because this query does not request them.
             users = (UserInfo * len(batch))()
             floors = [api["FloorsInfo"]() for _ in batch]
             user_ex = [api["UserInfoEx"]() for _ in batch]
-            user_ex2 = [api["UserInfoEx2"]() for _ in batch]
-            user_ex3 = [api["UserInfoEx3"]() for _ in batch]
             for index in range(len(batch)):
                 users[index].pstuFloorsEx2 = pointer(floors[index])
                 users[index].pstuUserInfoEx = pointer(user_ex[index])
-                users[index].pstuUserInfoEx2 = pointer(user_ex2[index])
-                users[index].pstuUserInfoEx3 = pointer(user_ex3[index])
 
             fail_codes = (c_int * len(batch))()
             output = api["GetOut"]()
@@ -458,8 +462,21 @@ class DahuaAccessCardService:
                 5000,
             )
             if not ok:
+                # Capture the numeric SDK code before asking the wrapper to
+                # format the message, so a subsequent test provides actionable
+                # diagnostics even if the text is generic.
+                try:
+                    raw_error = client.GetLastError()
+                    error_code = int(getattr(raw_error, "value", raw_error))
+                except Exception:
+                    error_code = None
+                try:
+                    error_message = str(client.GetLastErrorMessage())
+                except Exception as exc:
+                    error_message = f"Could not read SDK error message: {exc}"
+                code_text = f" (SDK error 0x{error_code:08X})" if error_code is not None else ""
                 raise AccessCardSDKError(
-                    "Dahua personnel query failed: " + str(client.GetLastErrorMessage())
+                    f"Dahua personnel query failed{code_text}: {error_message}"
                 )
 
             for index, requested_id in enumerate(batch):
@@ -640,16 +657,25 @@ class DahuaAccessCardService:
                            valid_from: date, valid_until: date,
                            door_indices: list[int], time_section_indices: list[int]) -> None:
         from ctypes import cast, c_void_p, pointer, sizeof
+
         api = self._imports()
         handle = self._session_handle(device_id)
-        # Refuse changing a UID to one already present on the physical device.
-        duplicate_rows = self.list_device_cards(device_id, card_number=card_number)
-        if any(int(item["record_number"]) != int(record_number) for item in duplicate_rows):
-            raise AccessCardSDKError(f"Card {card_number} already exists on the controller.")
-        # Search using the original UID so changing the UID does not lose the record.
-        current_rows = self._find_native_records(device_id, original_card_number)
+        original_number = original_card_number.strip().upper()
+        target_number = card_number.strip().upper()
+
+        # A duplicate lookup is only needed if the UID is actually changing.
+        # When it is unchanged, skip the extra FindRecord call.
+        if target_number != original_number:
+            duplicate_rows = self.list_device_cards(device_id, card_number=target_number)
+            if any(int(item["record_number"]) != int(record_number) for item in duplicate_rows):
+                raise AccessCardSDKError(f"Card {target_number} already exists on the controller.")
+
+        current_rows = self._find_native_records(device_id, original_number)
         if not current_rows:
-            raise AccessCardSDKError(f"Could not reload native card record {record_number}.")
+            raise AccessCardSDKError(
+                f"Could not reload native card record {record_number} for card {original_number}."
+            )
+
         # Keep the native result buffer alive until ControlDevice returns. The
         # card structure contains pointer fields (for extended floor data), so
         # copying it and releasing the source buffer could leave dangling pointers.
@@ -659,7 +685,7 @@ class DahuaAccessCardService:
         encoded_name = card_name.encode("utf-8")
         if len(encoded_name) > 63:
             raise AccessCardSDKError("card_name must fit within 63 UTF-8 bytes for the controller record.")
-        record.szCardNo = card_number.upper().encode("ascii")
+        record.szCardNo = target_number.encode("ascii")
         record.szCardName = encoded_name
         record.emStatus = int(api["CardState"].NET_ACCESSCTLCARD_STATE_NORMAL)
         record.emType = int({
@@ -687,6 +713,8 @@ class DahuaAccessCardService:
         client = self._device_sdk._client
         if not client.ControlDevice(handle, api["CtrlType"].RECORDSET_UPDATE, param, 5000):
             raise AccessCardSDKError(f"Dahua card update failed: {client.GetLastErrorMessage()}")
+        # Keep a local reference to the source allocation for the full native call.
+        _ = record_buffer
 
     def _find_native_records(self, device_id: int, card_number: str):
         from ctypes import cast, c_void_p, pointer, sizeof, POINTER
@@ -701,18 +729,26 @@ class DahuaAccessCardService:
         find_in.emType = int(api["RecordType"].ACCESSCTLCARD)
         find_in.pQueryCondition = cast(pointer(condition), c_void_p)
         find_out = api["FindOut"]()
+        # Required by the SDK. list_device_cards() already initialized this;
+        # the missing assignment here caused FindRecord to reject card updates.
         find_out.dwSize = sizeof(api["FindOut"])
+
         client = self._device_sdk._client
         if not client.FindRecord(handle, find_in, find_out, 5000):
             raise AccessCardSDKError(f"Dahua FindRecord failed: {client.GetLastErrorMessage()}")
         find_handle = int(getattr(find_out.lFindeHandle, "value", find_out.lFindeHandle))
         found = []
-        # Keep `buff` alive alongside each structure until the caller finishes
-        # the update operation. See update_device_card() above.
+        # Keep `buff` alive alongside each returned structure until the caller
+        # finishes the update operation.
         try:
             size = 10
-            ni = api["FindNextIn"](); ni.dwSize = sizeof(api["FindNextIn"]); ni.lFindeHandle = find_handle; ni.nFileCount = size
-            no = api["FindNextOut"](); no.dwSize = sizeof(api["FindNextOut"]); no.nMaxRecordNum = size
+            ni = api["FindNextIn"]()
+            ni.dwSize = sizeof(api["FindNextIn"])
+            ni.lFindeHandle = find_handle
+            ni.nFileCount = size
+            no = api["FindNextOut"]()
+            no.dwSize = sizeof(api["FindNextOut"])
+            no.nMaxRecordNum = size
             buff = (api["CardRecord"] * size)()
             for item in buff:
                 item.dwSize = sizeof(api["CardRecord"])
@@ -720,9 +756,11 @@ class DahuaAccessCardService:
             if not client.FindNextRecord(ni, no, 5000):
                 raise AccessCardSDKError(f"Dahua FindNextRecord failed: {client.GetLastErrorMessage()}")
             count = int(no.nRetRecordNum)
+            if count < 0 or count > size:
+                raise AccessCardSDKError(f"Dahua returned an invalid card record count: {count}")
             rows = cast(no.pRecordList, POINTER(api["CardRecord"] * size)).contents
-            for i in range(min(count, size)):
-                found.append((rows[i], buff))
+            for index in range(count):
+                found.append((rows[index], buff))
         finally:
             client.FindRecordClose(find_handle)
         return found
