@@ -82,31 +82,28 @@ export function DeviceStatus() {
   if (devices.length === 0) {
     return (
       <Badge
-        tone="neutral"
-        icon={<CircleDashed aria-hidden className="size-3.5" />}
-        title="No controller registered yet"
+        tone="offline"
+        icon={<CircleOff aria-hidden className="size-3.5" />}
+        title="No controller registered — the dashboard has no device to report on"
       >
-        No controller
+        Offline
       </Badge>
     );
   }
 
   const online = devices.filter((d) => d.status === "online").length;
-  const allOnline = online === devices.length;
   const first = devices[0];
+  // Single indicator: no counts. The station reads Online as soon as one
+  // registered controller is online, so a stale/secondary offline row cannot
+  // mask a healthy device. Offline only when none are online.
+  const tone: keyof typeof TONE =
+    online > 0
+      ? "online"
+      : devices.some((d) => d.status === "offline")
+        ? "offline"
+        : "pending";
   const label =
-    devices.length === 1
-      ? first.status === "online"
-        ? "Online"
-        : first.status === "offline"
-          ? "Offline"
-          : "Connecting"
-      : `${online}/${devices.length} online`;
-  const tone: keyof typeof TONE = allOnline
-    ? "online"
-    : devices.some((d) => d.status === "offline")
-      ? "offline"
-      : "pending";
+    tone === "online" ? "Online" : tone === "offline" ? "Offline" : "Connecting";
   const title = [
     devices.length === 1
       ? [first.name, first.host, first.last_error].filter(Boolean).join(" · ")
@@ -131,9 +128,6 @@ export function DeviceStatus() {
       title={title}
     >
       {label}
-      <span className="hidden font-normal opacity-80 lg:inline">
-        · {first.name}
-      </span>
     </Badge>
   );
 }
