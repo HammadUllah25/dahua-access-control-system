@@ -45,9 +45,11 @@ import {
   type CardRecord,
   type Person,
   type PersonCategory,
+  type PersonRole,
 } from "@/lib/station-data";
 
 const CATEGORIES: PersonCategory[] = ["Normal", "VIP", "Guest", "Patrol"];
+const ROLES: PersonRole[] = ["Staff", "Visitor"];
 
 function PeopleCardsView() {
   // shortcut: local state only — writes are not pushed to the controller yet
@@ -55,11 +57,13 @@ function PeopleCardsView() {
   const [cards, setCards] = useState<CardRecord[]>(CARDS);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"All" | PersonCategory>("All");
+  const [role, setRole] = useState<"All" | PersonRole>("All");
   const [selected, setSelected] = useState<Person | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({
     name: "",
     category: "Normal" as PersonCategory,
+    role: "Visitor" as PersonRole,
     validFrom: "2026-11-12",
     validTo: "2027-11-11",
   });
@@ -68,6 +72,7 @@ function PeopleCardsView() {
     const q = query.trim().toLowerCase();
     return people.filter((p) => {
       if (category !== "All" && p.category !== category) return false;
+      if (role !== "All" && p.role !== role) return false;
       if (!q) return true;
       const card = cards.find((c) => c.personId === p.id);
       return (
@@ -75,7 +80,7 @@ function PeopleCardsView() {
         (card?.masked.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [people, cards, query, category]);
+  }, [people, cards, query, category, role]);
 
   const cardOf = (personId: string) =>
     cards.find((c) => c.personId === personId);
@@ -87,7 +92,7 @@ function PeopleCardsView() {
   const addPerson = () => {
     if (!form.name.trim()) return;
     const id = `P${String(people.length + 1).padStart(3, "0")}`;
-    setPeople([...people, { id, name: form.name.trim(), category: form.category, status: "Active" }]);
+    setPeople([...people, { id, name: form.name.trim(), category: form.category, role: form.role, status: "Active" }]);
     setCards([
       ...cards,
       {
@@ -108,6 +113,12 @@ function PeopleCardsView() {
 
   const setCardStatus = (cardId: string, status: CardRecord["status"]) =>
     setCards(cards.map((c) => (c.id === cardId ? { ...c, status } : c)));
+
+  // Admin assignment: staff vs visitor. Keep the open drawer in sync too.
+  const setPersonRole = (personId: string, next: PersonRole) => {
+    setPeople(people.map((p) => (p.id === personId ? { ...p, role: next } : p)));
+    setSelected((s) => (s && s.id === personId ? { ...s, role: next } : s));
+  };
 
   const selectedCard = selected ? cardOf(selected.id) : undefined;
 
@@ -134,17 +145,30 @@ function PeopleCardsView() {
                 <span className="text-xs font-medium text-muted-foreground">Name</span>
                 <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" />
               </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-muted-foreground">Category</span>
-                <Select value={form.category} onValueChange={(v) => v && setForm({ ...form, category: v as PersonCategory })}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Category</span>
+                  <Select value={form.category} onValueChange={(v) => v && setForm({ ...form, category: v as PersonCategory })}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CATEGORIES.map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Assign as</span>
+                  <Select value={form.role} onValueChange={(v) => v && setForm({ ...form, role: v as PersonRole })}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {ROLES.map((r) => (
+                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </label>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-muted-foreground">Valid from</span>
@@ -180,7 +204,7 @@ function PeopleCardsView() {
         ))}
       </div>
 
-      {/* search + category filter */}
+      {/* search + role/category filters */}
       <Panel title="Directory">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <div className="relative min-w-52 flex-1">
@@ -202,12 +226,28 @@ function PeopleCardsView() {
               </button>
             ))}
           </div>
+          <div role="group" aria-label="Role filter" className="inline-flex rounded-lg bg-muted p-0.5">
+            {(["All", ...ROLES] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                aria-pressed={role === r}
+                onClick={() => setRole(r)}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  role === r ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {r === "Visitor" ? "Visitors" : r}
+              </button>
+            ))}
+          </div>
         </div>
 
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Person</TableHead>
+              <TableHead>Role</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Card</TableHead>
               <TableHead>Validity</TableHead>
@@ -220,6 +260,7 @@ function PeopleCardsView() {
               return (
                 <TableRow key={p.id} className="cursor-pointer" onClick={() => setSelected(p)}>
                   <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell className="text-xs">{p.role}</TableCell>
                   <TableCell>{p.category}</TableCell>
                   <TableCell className="font-mono text-xs">{card?.masked ?? "—"}</TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
@@ -253,6 +294,29 @@ function PeopleCardsView() {
               <SheetDescription>
                 {selected.id} · {selected.category} user
               </SheetDescription>
+
+              <section>
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Admin assignment
+                </h3>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-muted-foreground">Role</span>
+                  <Select
+                    value={selected.role}
+                    onValueChange={(v) => v && setPersonRole(selected.id, v as PersonRole)}
+                  >
+                    <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {ROLES.map((r) => (
+                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Station admin assigns each person as staff or visitor.
+                </p>
+              </section>
 
               {selectedCard ? (
                 <>

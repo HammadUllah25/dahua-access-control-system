@@ -8,6 +8,7 @@ import {
   CalendarClock,
   DoorOpen,
   LayoutDashboard,
+  Plus,
   Radio,
   ScrollText,
   ScanLine,
@@ -29,7 +30,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
-// Blueprint §2: the 9 station-admin pages, grouped for scanning
+// Blueprint §2: the 9 station-admin pages plus the Add Device setup flow
 const NAV = [
   {
     label: "Operations",
@@ -50,6 +51,7 @@ const NAV = [
     label: "Station",
     items: [
       { title: "Device & Door", href: "/device", icon: DoorOpen },
+      { title: "Add Device", href: "/add-device", icon: Plus },
       { title: "Alerts & Events", href: "/alerts", icon: BellRing },
     ],
   },

@@ -8,6 +8,8 @@ export const STATION = {
   id: "ST-04",
   name: "PumpStation 04",
   address: "Sheikh Zayed Rd · Branch 04",
+  lat: 25.2048,
+  lng: 55.2708,
   timezone: "Asia/Dubai (GMT+4)",
   contact: "ops.station04@fuelco.example",
   admin: { name: "A. Rahman", email: "a.rahman@fuelco.example" },
@@ -30,24 +32,49 @@ export const DEVICE = {
   lastError: null as string | null,
 };
 
+// Static map positions for the Overview Google map. Coordinates are percentages
+// of the station view.
+// shortcut: hand-placed pins — they do not follow map pan/zoom; a keyed Maps JS
+// API is needed for anchored markers.
+export type SiteDevice = {
+  id: string;
+  name: string;
+  location: string;
+  model: string;
+  status: "online" | "offline" | "pending";
+  x: number;
+  y: number;
+};
+
+export const SITE_DEVICES: SiteDevice[] = [
+  { id: "SD1", name: "Washroom entry · Reader 1", location: "Washroom block", model: "DHI-ASI1201E", status: "online", x: 38, y: 44 },
+  { id: "SD2", name: "Washroom exit · Reader 2", location: "Washroom block", model: "DHI-ASI1201E", status: "online", x: 26, y: 66 },
+  { id: "SD3", name: "Shop staff door", location: "Shop & kiosk", model: "DHI-ASI1201E", status: "pending", x: 58, y: 30 },
+];
+
 export type PersonCategory = "Normal" | "VIP" | "Guest" | "Patrol";
+
+// Station admin assigns every person as staff or visitor; the controller
+// category above stays separate because firmware exposes it independently.
+export type PersonRole = "Staff" | "Visitor";
 
 export type Person = {
   id: string;
   name: string;
   category: PersonCategory;
+  role: PersonRole;
   status: "Active" | "Blocked";
 };
 
 export const PEOPLE: Person[] = [
-  { id: "P001", name: "A. Rahman", category: "Normal", status: "Active" },
-  { id: "P002", name: "M. Okonkwo", category: "Normal", status: "Active" },
-  { id: "P003", name: "S. Farouk", category: "VIP", status: "Active" },
-  { id: "P004", name: "L. D'Souza", category: "Patrol", status: "Active" },
-  { id: "P005", name: "R. Ibrahim", category: "Normal", status: "Active" },
-  { id: "P006", name: "K. Van Der Berg", category: "Guest", status: "Active" },
-  { id: "P007", name: "H. Nakamura", category: "Guest", status: "Blocked" },
-  { id: "P008", name: "T. Mwangi", category: "Patrol", status: "Active" },
+  { id: "P001", name: "A. Rahman", category: "Normal", role: "Staff", status: "Active" },
+  { id: "P002", name: "M. Okonkwo", category: "Normal", role: "Staff", status: "Active" },
+  { id: "P003", name: "S. Farouk", category: "VIP", role: "Visitor", status: "Active" },
+  { id: "P004", name: "L. D'Souza", category: "Patrol", role: "Staff", status: "Active" },
+  { id: "P005", name: "R. Ibrahim", category: "Normal", role: "Staff", status: "Active" },
+  { id: "P006", name: "K. Van Der Berg", category: "Guest", role: "Visitor", status: "Active" },
+  { id: "P007", name: "H. Nakamura", category: "Guest", role: "Visitor", status: "Blocked" },
+  { id: "P008", name: "T. Mwangi", category: "Patrol", role: "Staff", status: "Active" },
 ];
 
 export type CardRecord = {

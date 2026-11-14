@@ -1,11 +1,7 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { OnboardingView } from "@/views/onboarding";
-
-export const metadata: Metadata = {
-  title: "Device onboarding",
-};
-
+// Onboarding moved into the dashboard as the Add Device flow. Keep this entry
+// point so existing signup/OTP links keep working.
 export default function OnboardingPage() {
-  return <OnboardingView />;
+  redirect("/add-device");
 }

@@ -34,6 +34,7 @@ import { Panel } from "@/components/dashboard/panel";
 import { ResultBadge } from "@/components/dashboard/badges";
 import { AccessRhythm } from "@/components/overview/access-rhythm";
 import { DenialReasons } from "@/components/overview/denial-reasons";
+import { StationMap } from "@/components/overview/station-map";
 import { Led } from "@/common/led";
 import {
   Table,
@@ -247,6 +248,9 @@ function OverviewView() {
           </div>
         </Panel>
       </div>
+
+      {/* station map sits beneath the access activity panels */}
+      <StationMap />
 
       {/* row 3: usage by hour + device/door status */}
       <div className="grid gap-4 lg:grid-cols-2">
