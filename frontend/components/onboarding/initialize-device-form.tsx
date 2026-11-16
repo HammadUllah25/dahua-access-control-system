@@ -100,7 +100,7 @@ export function InitializeDeviceForm({
           return;
         }
 
-        if (fresh.initialization_state !== "uninitialized") {
+        if (!fresh.initialization_state.toLowerCase().includes("uninit")) {
           // Already initialized (possibly by the previous attempt) — go register it.
           toast.update(toastId, {
             render: `Controller reports "${fresh.initialization_state}" — continuing to connect.`,
@@ -262,7 +262,7 @@ export function InitializeDeviceForm({
             ) : (
               <>
                 <CheckCircle2 className="w-4 h-4" />
-                Initialize Controller & Open Dashboard
+                Initialize Controller & Continue
               </>
             )}
           </Button>

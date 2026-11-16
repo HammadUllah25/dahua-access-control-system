@@ -1,17 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
+  ArrowLeft,
   ArrowRight,
   Check,
   Edit3,
   Globe,
   Loader2,
-  Mail,
   Network,
-  Phone,
   RefreshCw,
-  ShieldAlert,
 } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -20,21 +19,36 @@ import { Input } from "@/components/ui/input";
 import { DiscoverDevices } from "@/components/onboarding/discover-devices";
 import { InitializeDeviceForm } from "@/components/onboarding/initialize-device-form";
 import { ConnectDevice } from "@/components/onboarding/connect-device";
+import { CreateStation } from "@/components/onboarding/create-station";
+import { CreateStationUser } from "@/components/onboarding/create-station-user";
+import { AssignCard } from "@/components/cards/assign-card";
 import { getInterfacesAction, type InterfaceItem } from "@/actions/get-interfaces";
 import type { DiscoveredDevice } from "@/actions/discover-devices";
+import type { DeviceRecord } from "@/actions/add-device";
+import type { StationRecord } from "@/actions/stations";
+import type { StationUserRecord } from "@/actions/station-users";
 
 const STEPS = [
-  "Network & Recovery",
-  "Discover Devices",
-  "Initialize Device",
-  "Connect Device",
+  "Network",
+  "Discover",
+  "Initialize",
+  "Connect",
+  "Station",
+  "User",
+  "Card",
 ] as const;
 
-function Stepper({ current }: { current: number }) {
+function Stepper({
+  current,
+  skipped = [],
+}: {
+  current: number;
+  skipped?: number[];
+}) {
   return (
     <ol aria-label="Setup progress" className="flex items-center gap-3">
       {STEPS.map((label, i) => {
-        const done = i < current;
+        const done = i < current || skipped.includes(i);
         const active = i === current;
         return (
           <li key={label} className="flex flex-1 items-center gap-2 last:flex-none">
@@ -69,7 +83,9 @@ function Stepper({ current }: { current: number }) {
 }
 
 export function OnboardingView() {
+  const router = useRouter();
   const [step, setStep] = useState(0);
+  const [skipped, setSkipped] = useState<number[]>([]);
   const [networkMode, setNetworkMode] = useState<"detected" | "manual">("detected");
   const [interfaces, setInterfaces] = useState<InterfaceItem[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,16 +93,15 @@ export function OnboardingView() {
   const [selectedIp, setSelectedIp] = useState<string>("");
   const [manualIp, setManualIp] = useState<string>("");
 
-  // Recovery Phone and Recovery Email captured in Network step
-  const [recoveryPhone, setRecoveryPhone] = useState<string>("+92 300 1234567");
-  const [recoveryEmail, setRecoveryEmail] = useState<string>("admin@station.com");
-
   const [selectedDevice, setSelectedDevice] = useState<DiscoveredDevice | null>(null);
   const [needsInit, setNeedsInit] = useState(true);
   const [initCredentials, setInitCredentials] = useState<{
     username: string;
     password: string;
   } | null>(null);
+  const [connectedDevice, setConnectedDevice] = useState<DeviceRecord | null>(null);
+  const [createdStation, setCreatedStation] = useState<StationRecord | null>(null);
+  const [createdUser, setCreatedUser] = useState<StationUserRecord | null>(null);
 
   // Fetch GET /device-initialization/interfaces directly in the View via Server Action
   const fetchInterfaces = async () => {
@@ -130,12 +145,6 @@ export function OnboardingView() {
       return;
     }
 
-    // Validate Recovery Email
-    if (!recoveryEmail.includes("@")) {
-      toast.error("Please provide a valid recovery email address");
-      return;
-    }
-
     setStep(1);
   };
 
@@ -143,23 +152,24 @@ export function OnboardingView() {
     <div className="w-full max-w-xl space-y-7">
       <div className="space-y-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Dahua Controller Onboarding
+          Dahua Controller Setup
         </h1>
         <p className="text-sm text-muted-foreground">
-          Detect active local network interfaces, configure Dahua password recovery contacts, and initialize controllers.
+          Connect the controller, create its station, add the first station
+          user, and assign a physical card.
         </p>
       </div>
 
-      <Stepper current={step} />
+      <Stepper current={step} skipped={skipped} />
 
-      {/* STEP 1: Select Network Interface & Recovery Phone/Email */}
+      {/* STEP 1: Select the local network interface */}
       {step === 0 && (
         <section className="space-y-5 rounded-xl border border-border/80 bg-card p-6 shadow-sm">
           <div className="flex items-center justify-between pb-2 border-b border-border/60">
             <div>
-              <h2 className="text-base font-semibold text-foreground">Networking & Recovery Contacts</h2>
+              <h2 className="text-base font-semibold text-foreground">Network adapter</h2>
               <p className="text-xs text-muted-foreground">
-                Select your network adapter and define device recovery phone and email.
+                Select the local adapter used to reach the Dahua controller.
               </p>
             </div>
             {networkMode === "detected" && (
@@ -323,7 +333,7 @@ export function OnboardingView() {
             </span>
             <Button
               onClick={handleProceed}
-              disabled={!activeIp || !recoveryPhone.trim() || !recoveryEmail.trim()}
+              disabled={!activeIp}
               className="gap-2 text-xs h-9 px-4 font-semibold"
             >
               Proceed to Device Discovery
@@ -342,8 +352,11 @@ export function OnboardingView() {
             setInitCredentials(null);
             // A controller that is already initialized only needs registering,
             // so skip the initialize step instead of hitting a guaranteed 409.
-            const uninitialized = device.initialization_state === "uninitialized";
+            const uninitialized = device.initialization_state
+              .toLowerCase()
+              .includes("uninit");
             setNeedsInit(uninitialized);
+            setSkipped(uninitialized ? [] : [2]);
             setStep(uninitialized ? 2 : 3);
           }}
           onBack={() => setStep(0)}
@@ -368,7 +381,83 @@ export function OnboardingView() {
           device={selectedDevice}
           credentials={initCredentials ?? undefined}
           onBack={() => setStep(needsInit ? 2 : 1)}
+          onConnected={(record) => {
+            setConnectedDevice(record);
+            setStep(4);
+          }}
         />
+      )}
+
+      {/* STEP 5: Create the station and assign the controller */}
+      {step === 4 && connectedDevice && (
+        <CreateStation
+          device={connectedDevice}
+          onBack={() => setStep(3)}
+          onCreated={(station) => {
+            setConnectedDevice((current) =>
+              current ? { ...current, station_id: station.id } : current
+            );
+            setCreatedStation(station);
+            setStep(5);
+          }}
+        />
+      )}
+
+      {/* STEP 6: Add the first station user */}
+      {step === 5 && createdStation && (
+        <CreateStationUser
+          station={createdStation}
+          onBack={() => setStep(4)}
+          onCreated={(user) => {
+            setCreatedUser(user);
+            setStep(6);
+          }}
+        />
+      )}
+
+      {/* STEP 7: Assign a physical card to the station user */}
+      {step === 6 && createdStation && createdUser && connectedDevice && (
+        <section className="space-y-4 rounded-xl border border-border/80 bg-card p-6 shadow-sm">
+          <div className="flex items-center justify-between border-b border-border/60 pb-2">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">
+                Assign the first card
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {createdUser.name} · {createdStation.name}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setStep(5)}
+              className="h-8 gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft aria-hidden className="size-3.5" />
+              Back
+            </Button>
+          </div>
+
+          <AssignCard
+            stationId={createdStation.id}
+            userId={createdUser.id}
+            userName={createdUser.name}
+            deviceId={connectedDevice.id}
+            onDone={() => router.push("/overview")}
+            onCancel={() => router.push("/overview")}
+          />
+
+          <div className="flex justify-end border-t border-border/60 pt-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/overview")}
+              className="text-xs text-muted-foreground"
+            >
+              Skip card for now
+            </Button>
+          </div>
+        </section>
       )}
     </div>
   );

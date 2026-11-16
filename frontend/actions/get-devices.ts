@@ -1,8 +1,10 @@
 "use server";
 
-// Server Action: GET /devices/status
-// Initial credential-free snapshot for the header badge. Live changes arrive
+// Server Actions: GET /devices/status (header badge) and GET /devices
+// (full rows used by the station and people screens). Live changes arrive
 // over ws://.../ws/devices (the browser connects directly; no CORS involved).
+
+import { backendRequest } from "@/actions/backend";
 
 export type DeviceStatus = {
   device_id: number;
@@ -37,12 +39,46 @@ export type DeviceStatusSnapshot = {
   summary: DeviceStatusSummary;
 };
 
+// Mirrors the backend DeviceRead schema (GET /devices).
+export type DeviceListRecord = {
+  id: number;
+  name: string;
+  station_id: number | null;
+  connection_type: string;
+  host: string;
+  port: number;
+  username: string;
+  model: string | null;
+  serial_number: string | null;
+  mac_address: string | null;
+  status: string;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+  last_connected_at: string | null;
+  monitoring_enabled: boolean;
+  last_health_check_at: string | null;
+  last_tcp_reachable_at: string | null;
+  last_connect_attempt_at: string | null;
+  consecutive_failures: number;
+  inventory_status: string;
+  last_inventory_at: string | null;
+  expected_card_count: number | null;
+  observed_card_count: number | null;
+};
+
 export type ServerActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
 
 // Local backend started with backend\dahua_access_starter\run.bat
 const BASE_URL = process.env.DEVICE_API_BASE_URL || "http://127.0.0.1:8000";
+
+export async function listDevicesAction(): Promise<
+  ServerActionResult<DeviceListRecord[]>
+> {
+  return backendRequest<DeviceListRecord[]>("/devices");
+}
 
 export async function getDeviceStatusAction(): Promise<
   ServerActionResult<DeviceStatusSnapshot>

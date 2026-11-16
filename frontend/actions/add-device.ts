@@ -32,6 +32,18 @@ export type DeviceRecord = {
   status: string;
   last_error: string | null;
   monitoring_enabled: boolean;
+  station_id: number | null;
+  created_at: string;
+  updated_at: string;
+  last_connected_at: string | null;
+  last_health_check_at: string | null;
+  last_tcp_reachable_at: string | null;
+  last_connect_attempt_at: string | null;
+  consecutive_failures: number;
+  inventory_status: string;
+  last_inventory_at: string | null;
+  expected_card_count: number | null;
+  observed_card_count: number | null;
 };
 
 export type ServerActionResult<T> =

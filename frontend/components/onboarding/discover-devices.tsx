@@ -98,7 +98,7 @@ export function DiscoverDevices({
     <section className="space-y-4 rounded-xl border border-border/80 bg-card p-6 shadow-sm">
       <div className="flex items-center justify-between pb-2 border-b border-border/60">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Discover Uninitialized Devices</h2>
+          <h2 className="text-base font-semibold text-foreground">Discover controllers</h2>
           <p className="text-xs text-muted-foreground">
             Server Action: <code className="font-mono text-primary font-medium">POST /device-initialization/discover</code>
           </p>
@@ -197,7 +197,7 @@ export function DiscoverDevices({
           {devices.length === 0 ? (
             <div className="p-6 text-center border border-dashed rounded-lg bg-muted/10 space-y-1">
               <Cpu className="w-7 h-7 mx-auto text-muted-foreground/60" />
-              <p className="text-xs font-medium text-foreground">No uninitialized devices found</p>
+              <p className="text-xs font-medium text-foreground">No controllers found</p>
               <p className="text-[11px] text-muted-foreground">
                 Verify the Dahua controller is connected to the same LAN subnet and powered on.
               </p>
