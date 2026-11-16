@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Cpu, KeyRound, Loader2, ShieldCheck, User } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -19,14 +18,15 @@ export function ConnectDevice({
   device,
   credentials,
   onBack,
+  onConnected,
 }: {
   device: DiscoveredDevice;
   // Missing when the controller was initialized outside this onboarding flow
   // (e.g. the Dahua config tool); the user then types the existing password.
   credentials?: { username: string; password: string };
   onBack: () => void;
+  onConnected: (device: DeviceRecord) => void;
 }) {
-  const router = useRouter();
   const [form, setForm] = useState({
     name: device.model
       ? `${device.model} — ${device.ip_address}`
@@ -162,24 +162,27 @@ export function ConnectDevice({
         return;
       }
 
-      if (record.status === "online") {
+      if (record.status !== "online") {
+        const message = `${record.name} is registered, but not connected yet${
+          record.last_error ? `: ${record.last_error}` : "."
+        }`;
+        setError(message);
         toast.update(toastId, {
-          render: `${record.name} is registered and online.`,
-          type: "success",
-          isLoading: false,
-          autoClose: 4000,
-        });
-      } else {
-        toast.update(toastId, {
-          render: `${record.name} is registered, but not connected yet${
-            record.last_error ? `: ${record.last_error}` : "."
-          }`,
+          render: message,
           type: "warning",
           isLoading: false,
           autoClose: 7000,
         });
+        return;
       }
-      router.push("/overview");
+
+      toast.update(toastId, {
+        render: `${record.name} is registered and online.`,
+        type: "success",
+        isLoading: false,
+        autoClose: 4000,
+      });
+      onConnected(record);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to register the device";
       setError(msg);
@@ -355,7 +358,7 @@ export function ConnectDevice({
             ) : (
               <>
                 <CheckCircle2 className="w-4 h-4" />
-                Connect Controller & Open Dashboard
+                Connect Controller & Continue
               </>
             )}
           </Button>

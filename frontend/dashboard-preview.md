@@ -258,20 +258,22 @@ Every role gets the same console frame, filtered to its permissions.
 
 ### 5.4 Stations — `/stations`
 
-**Who sees it:** every role (core page), scoped to the role.
+**Who sees it:** every role (core page).
 
-**Purpose:** monitor every station in the role's scope: controller health and reader count.
+**Purpose:** monitor the stations and controllers registered in the real backend, and create the first station during setup.
 
 **Content**
 
-- Header with role view and scope.
+- Header with role badge and **Add station**.
+- **Add station is gated:** it is disabled with `cursor: not-allowed` until an unassigned controller exists. The page links to **Add Device** when no controller is registered.
 - Four KPIs:
-  - **Stations** — count in scope.
-  - **Online** — controllers reachable.
-  - **Offline** — needs attention.
-  - **Devices** — total devices, with pending-setup station count.
-- **Station monitoring** table: station name + ID, area, branch, devices, status (Online/Offline/Pending), last seen.
-- Super Admin sees 6, Admin sees 4, Branch sees 3.
+  - **Stations** — registered backend stations.
+  - **Online controllers** — controllers reachable now.
+  - **Offline controllers** — needs attention.
+  - **Pending controllers** — not connected yet.
+- **Station monitoring** table: station name + code, city, controller count + first host, controller status (Online/Offline/Pending/No controller), last seen.
+- **Create station** dialog: station code, name, address, city, and an unassigned controller. Creating a station calls `POST /stations`, then assigns the controller with `POST /stations/{id}/devices/{deviceId}`. If assignment fails, the station is kept and the dialog offers **Retry assignment**.
+- The role scope labels (Super Admin / Admin / Branch) remain, but the list itself comes from the backend. The backend has no area/branch fields, so every role sees the same real stations.
 
 ---
 
@@ -316,28 +318,29 @@ Every role gets the same console frame, filtered to its permissions.
 
 **Who sees it:** Super Admin and Admin. Optional; on by default for Admin. Not available to Branch.
 
-**Purpose:** people records and the card credentials that can authenticate at the washroom reader.
+**Purpose:** manage the real station people and their physical card credentials through the backend.
 
 **Content**
 
-- Header with **Add person** dialog:
-  - Name.
-  - Category: Normal / VIP / Guest / Patrol.
-  - Assign as: Staff / Visitor.
-  - Valid from / valid to dates.
-  - Creates the person and a placeholder MIFARE card.
-- Summary strip: Total people, Active cards, Expired cards, Blocked cards.
-- **Directory**:
-  - Search by name or card number.
-  - Category filter: All / Normal / VIP / Guest / Patrol.
-  - Role filter: All / Staff / Visitors.
-  - Table: person, role, category, card, validity, card status.
-- **Person detail drawer**:
-  - **Admin assignment:** change the person between Staff and Visitor.
-  - **Assigned credential:** card, technology (MIFARE 13.56 MHz), validity window, schedule, status.
-  - **Card actions:** Block card, Deactivate, Activate.
-  - If no card: enrollment prompt to present a MIFARE card at the reader.
-- All changes are local state only; they are not pushed to the controller.
+- **Station selector** populated from `GET /stations`. Choosing a station loads its operational roles and people.
+- **Add user is gated:** disabled with `cursor: not-allowed` when no station exists, while roles load, or when the station has no operational roles. The page links to **Stations**.
+- **Add user** dialog:
+  - Full name.
+  - Optional phone.
+  - Operational role from `GET /stations/{id}/roles` (defaults to `CUSTOMER`).
+  - Calls `POST /stations/{id}/users`. Station users are operational people, not dashboard login accounts.
+- Summary strip: Total people, Cards assigned, No card, Roles.
+- **Station directory**:
+  - Search by name, phone or card number.
+  - Operational-role filter.
+  - Table: person, role, phone, card UID, validity window, card status.
+- **Assign card**:
+  - Disabled with `cursor: not-allowed` when the person already has a card or the station has no assigned controller.
+  - Starts a real card-scan enrollment with `POST /stations/{id}/users/{userId}/card-enrollments`.
+  - Polls the enrollment session until a card UID is captured.
+  - Confirms with the backend defaults (general card, valid until 2037-12-31, door/time-section 0) and shows the backend message.
+  - The controller must be connected and its card-scan listener active.
+- Card readback verification is still required after assignment; the success message says so.
 
 ---
 
@@ -394,15 +397,14 @@ Every role gets the same console frame, filtered to its permissions.
 
 **Who sees it:** Super Admin and Admin. Optional; on by default for Admin. Not available to Branch.
 
-**Purpose:** register another Dahua controller without leaving the console.
+**Purpose:** complete the real controller-to-card setup without leaving the console.
 
-**Flow: four steps**
+**Flow: seven steps, each gated by the previous one**
 
-1. **Network & Recovery**
+1. **Network**
    - Choose **Auto-Detected Interfaces** or **Enter IP Manually**.
    - Auto-detected mode calls the backend for local IPv4 interfaces, with a loader, retry and error state.
    - Manual mode accepts an IPv4 address, with validation and subnet suggestions.
-   - Proceed validates the selected IP and the prefilled recovery contacts.
 2. **Discover Devices**
    - Shows the local discovery IP and a wait time (2–15 seconds).
    - Auto-scans on entry; **Scan** reruns discovery.
@@ -420,8 +422,20 @@ Every role gets the same console frame, filtered to its permissions.
    - Options: connect now, monitoring enabled.
    - Registers with `POST /devices`.
    - If the controller is already registered (`409`), it finds the existing record and updates its credentials with `PUT /devices/{id}`.
-   - Success toast reports whether the controller is online or registered but not connected, including the backend error when present.
-   - On success, goes to `/overview`.
+   - Requires an **online** controller before continuing; an offline/pending controller stays on this step with the backend error.
+5. **Station**
+   - If the controller is already assigned, it shows the station and continues.
+   - Otherwise: station code, name, address and city.
+   - Creates the station with `POST /stations`, then assigns the controller with `POST /stations/{id}/devices/{deviceId}`.
+   - If assignment fails after creation, it keeps the station and offers **Retry controller assignment**.
+6. **User**
+   - Full name, optional phone, operational role.
+   - Loads roles from `GET /stations/{id}/roles` and defaults to `CUSTOMER`.
+   - Creates the station user with `POST /stations/{id}/users`.
+7. **Card**
+   - Starts a real card-scan enrollment and polls for the captured UID.
+   - Confirms with the backend defaults and shows the backend response.
+   - **Skip card for now** finishes the flow without assigning a card.
 
 **Backend:** local FastAPI at `http://127.0.0.1:8000`. All calls go through server actions, so the browser avoids CORS.
 
@@ -694,8 +708,10 @@ Managed accounts are stored in `localStorage["washroom_accounts"]`.
 | Connection | Ethernet / TCP-IP, IP `10.20.4.11` |
 | Door | Washroom Entry · Reader 1, relay `Energised (locked)`, contact `Closed` |
 | Map access points | 3: washroom entry, washroom exit, shop staff door |
-| People | 8 records, Staff and Visitor roles |
-| Cards | 8: 6 active, 1 expired, 1 blocked, MIFARE 13.56 MHz |
+| People | 8 mock records remain for schedules/logs previews; People & Cards now reads real backend station users |
+| Cards | 8 mock cards remain for schedules/logs previews; People & Cards now enrolls real cards through the controller |
+| Backend stations | Live from `GET /stations`; shown on Stations and People & Cards |
+| Backend station users | Live from `GET /stations/{id}/users`; created with `POST /stations/{id}/users` |
 | Schedules | 5: staff, VIP, guest, patrol, cleaning |
 | Holidays | 3: Commemoration Day, National Day, New Year |
 | Alerts | 5: door timeout, blocked card, tamper, controller offline, intrusion |
@@ -711,6 +727,8 @@ Managed accounts are stored in `localStorage["washroom_accounts"]`.
 
 - Header controller status: REST snapshot + WebSocket updates.
 - Add Device: interface discovery, device discovery, initialization, registration, duplicate-update path, re-discovery retry.
+- Stations: list, create and controller assignment.
+- People & Cards: station users, operational roles and physical card enrollment/assignment.
 - Backend at `http://127.0.0.1:8000`; socket at `ws://127.0.0.1:8000/ws/devices`.
 
 **Mock / local-only**
@@ -718,8 +736,6 @@ Managed accounts are stored in `localStorage["washroom_accounts"]`.
 - Overview KPIs, charts, station map and recent activity.
 - Live Monitoring feed.
 - Access Logs.
-- Stations list and statuses.
-- People & Cards edits.
 - Access Schedules edits and publish.
 - Device & Door page controller state.
 - Alerts acknowledge/resolve.
@@ -738,7 +754,9 @@ Managed accounts are stored in `localStorage["washroom_accounts"]`.
 - Hiding a module in Settings applies globally to every role.
 - The Overview map uses a keyless Google embed; markers do not follow pan/zoom.
 - Page-level controller status still comes from mock data; only the header is realtime.
-- People, schedules and alert actions are not pushed to the controller yet.
+- The backend has no area/branch fields, so Stations and People & Cards are not scoped by the demo role.
+- Card enrollment needs a connected controller with an active card-scan listener; assignment success still needs controller readback verification.
+- Schedules and alert actions are not pushed to the controller yet.
 
 ---
 
@@ -746,11 +764,12 @@ Managed accounts are stored in `localStorage["washroom_accounts"]`.
 
 1. Sign in as **Super Admin** with any unused email and the password `super admin`.
 2. Confirm all 12 pages are in the sidebar and the workspace says **FuelCo Network**.
-3. Open **Stations** — expect 6 stations, 4 online, 1 offline, 1 pending, 15 devices.
+3. Open **Stations** — expect the real backend stations. With no unassigned controller, **Add station** is disabled with `cursor: not-allowed`.
 4. Open **Users & Roles** — create an Admin account and a Branch account.
 5. In **Page permissions**, turn off a page for Admin, save, then sign in as that Admin and confirm the page disappears and its direct URL redirects to `/overview`.
-6. Sign in as **S. Khan** / `s.khan@fuelco.example` / `admin` — expect Area A, 4 stations, 11 pages, no Users & Roles.
-7. Sign in as **M. Ali** / `m.ali@fuelco.example` / `branch` — expect Branch 04, 3 stations, 8 pages, no People & Cards, Access Schedules, Add Device or Users & Roles.
+6. Sign in as **S. Khan** / `s.khan@fuelco.example` / `admin` — expect Area A, 11 pages, no Users & Roles.
+7. Sign in as **M. Ali** / `m.ali@fuelco.example` / `branch` — expect Branch 04, 8 pages, no People & Cards, Access Schedules, Add Device or Users & Roles.
 8. As Super Admin, open **Settings → Dashboard customization**, hide **Reports**, and confirm it disappears for every role.
-9. As Super Admin or Admin, open **Add Device** and walk the four steps against the local backend.
-10. Confirm the header status badge goes online/offline with the real controller and updates over the WebSocket without polling.
+9. As Super Admin or Admin, open **Add Device** and walk the seven steps against the local backend: Network → Discover → Initialize → Connect → Station → User → Card. Confirm each step is gated by the previous one.
+10. Open **People & Cards** — confirm Add user is disabled with `cursor: not-allowed` when no station exists, and card assignment is disabled without a station user/controller.
+11. Confirm the header status badge goes online/offline with the real controller and updates over the WebSocket without polling.

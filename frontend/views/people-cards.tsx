@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Nfc, Plus, Search } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { Loader2, Nfc, Plus, Search } from "lucide-react";
+import { toast } from "react-toastify";
 
 import { Panel } from "@/components/dashboard/panel";
 import { ToneBadge } from "@/components/dashboard/badges";
+import { AssignCard } from "@/components/cards/assign-card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,7 +16,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,13 +26,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
   Table,
   TableBody,
   TableCell,
@@ -39,163 +34,244 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  CARDS,
-  PEOPLE,
-  SCHEDULES,
-  type CardRecord,
-  type Person,
-  type PersonCategory,
-  type PersonRole,
-} from "@/lib/station-data";
-
-const CATEGORIES: PersonCategory[] = ["Normal", "VIP", "Guest", "Patrol"];
-const ROLES: PersonRole[] = ["Staff", "Visitor"];
+  listDevicesAction,
+  type DeviceListRecord,
+} from "@/actions/get-devices";
+import {
+  listStationsAction,
+  type StationRecord,
+} from "@/actions/stations";
+import {
+  createStationUserAction,
+  listStationRolesAction,
+  listStationUsersAction,
+  type OperationalRoleRecord,
+  type StationUserRecord,
+} from "@/actions/station-users";
 
 function PeopleCardsView() {
-  // shortcut: local state only — writes are not pushed to the controller yet
-  const [people, setPeople] = useState<Person[]>(PEOPLE);
-  const [cards, setCards] = useState<CardRecord[]>(CARDS);
+  const [stations, setStations] = useState<StationRecord[]>([]);
+  const [devices, setDevices] = useState<DeviceListRecord[]>([]);
+  const [stationId, setStationId] = useState("");
+  const [users, setUsers] = useState<StationUserRecord[]>([]);
+  const [roles, setRoles] = useState<OperationalRoleRecord[]>([]);
+  const [baseLoading, setBaseLoading] = useState(true);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<"All" | PersonCategory>("All");
-  const [role, setRole] = useState<"All" | PersonRole>("All");
-  const [selected, setSelected] = useState<Person | null>(null);
+  const [roleFilter, setRoleFilter] = useState("all");
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    category: "Normal" as PersonCategory,
-    role: "Visitor" as PersonRole,
-    validFrom: "2026-11-12",
-    validTo: "2027-11-11",
+  const [form, setForm] = useState({ name: "", phone: "", roleId: "" });
+  const [saving, setSaving] = useState(false);
+  const [cardUser, setCardUser] = useState<StationUserRecord | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const loadBase = useCallback(async () => {
+    setBaseLoading(true);
+    const [stationRes, deviceRes] = await Promise.all([
+      listStationsAction(),
+      listDevicesAction(),
+    ]);
+    if (!stationRes.success || !deviceRes.success) {
+      const message =
+        (!stationRes.success ? stationRes.error : "") ||
+        (!deviceRes.success ? deviceRes.error : "") ||
+        "Could not load stations.";
+      setError(message);
+      toast.error(message);
+    } else {
+      setStations(stationRes.data);
+      setDevices(deviceRes.data);
+      setStationId((current) => {
+        if (current && stationRes.data.some((s) => String(s.id) === current)) {
+          return current;
+        }
+        return stationRes.data[0] ? String(stationRes.data[0].id) : "";
+      });
+      setError(null);
+    }
+    setBaseLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void loadBase();
+  }, [loadBase]);
+
+  useEffect(() => {
+    if (!stationId) {
+      setUsers([]);
+      setRoles([]);
+      setUsersLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setUsers([]);
+    setRoles([]);
+    setRoleFilter("all");
+    setUsersLoading(true);
+    Promise.all([
+      listStationRolesAction(Number(stationId)),
+      listStationUsersAction(Number(stationId)),
+    ]).then(([roleRes, userRes]) => {
+      if (cancelled) return;
+      if (!roleRes.success || !userRes.success) {
+        const message =
+          (!roleRes.success ? roleRes.error : "") ||
+          (!userRes.success ? userRes.error : "") ||
+          "Could not load station people.";
+        setError(message);
+        toast.error(message);
+      } else {
+        setRoles(roleRes.data);
+        setUsers(userRes.data);
+        setError(null);
+      }
+      setUsersLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [stationId, reloadKey]);
+
+  const selectedStation = stations.find(
+    (station) => String(station.id) === stationId
+  );
+  const stationDevices = devices.filter(
+    (device) => device.station_id === selectedStation?.id
+  );
+  const cardDevice =
+    stationDevices.find((device) => device.status === "online") ??
+    stationDevices[0];
+  const hasStation = Boolean(selectedStation);
+  const canAddUser = hasStation && !usersLoading && roles.length > 0;
+  const preferredRole =
+    roles.find((role) => role.code === "CUSTOMER") ?? roles[0];
+
+  const q = query.trim().toLowerCase();
+  const filtered = users.filter((user) => {
+    if (roleFilter !== "all" && String(user.role.id) !== roleFilter) {
+      return false;
+    }
+    if (!q) return true;
+    return (
+      user.name.toLowerCase().includes(q) ||
+      (user.phone?.toLowerCase().includes(q) ?? false) ||
+      (user.active_card?.card_number.toLowerCase().includes(q) ?? false)
+    );
   });
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return people.filter((p) => {
-      if (category !== "All" && p.category !== category) return false;
-      if (role !== "All" && p.role !== role) return false;
-      if (!q) return true;
-      const card = cards.find((c) => c.personId === p.id);
-      return (
-        p.name.toLowerCase().includes(q) ||
-        (card?.masked.toLowerCase().includes(q) ?? false)
-      );
+  const activeCards = users.filter((user) => user.active_card).length;
+  const withoutCards = users.length - activeCards;
+
+  const openAdd = () => {
+    if (!selectedStation) return;
+    setForm({
+      name: "",
+      phone: "",
+      roleId: preferredRole ? String(preferredRole.id) : "",
     });
-  }, [people, cards, query, category, role]);
-
-  const cardOf = (personId: string) =>
-    cards.find((c) => c.personId === personId);
-
-  const activeCards = cards.filter((c) => c.status === "Active").length;
-  const expiredCards = cards.filter((c) => c.status === "Expired").length;
-  const blockedCards = cards.filter((c) => c.status === "Blocked").length;
-
-  const addPerson = () => {
-    if (!form.name.trim()) return;
-    const id = `P${String(people.length + 1).padStart(3, "0")}`;
-    setPeople([...people, { id, name: form.name.trim(), category: form.category, role: form.role, status: "Active" }]);
-    setCards([
-      ...cards,
-      {
-        id: `C${String(cards.length + 1).padStart(3, "0")}`,
-        personId: id,
-        // enrolled on first MIFARE read in the real flow; placeholder number here
-        masked: `0142 ···· ${String(1000 + Math.floor(Math.random() * 9000))}`,
-        tech: "MIFARE 13.56 MHz",
-        validFrom: form.validFrom,
-        validTo: form.validTo,
-        status: "Active",
-        scheduleId: "SCH01",
-      },
-    ]);
-    setAddOpen(false);
-    setForm({ ...form, name: "" });
+    setAddOpen(true);
   };
 
-  const setCardStatus = (cardId: string, status: CardRecord["status"]) =>
-    setCards(cards.map((c) => (c.id === cardId ? { ...c, status } : c)));
-
-  // Admin assignment: staff vs visitor. Keep the open drawer in sync too.
-  const setPersonRole = (personId: string, next: PersonRole) => {
-    setPeople(people.map((p) => (p.id === personId ? { ...p, role: next } : p)));
-    setSelected((s) => (s && s.id === personId ? { ...s, role: next } : s));
+  const createUser = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedStation || !form.name.trim() || !form.roleId) return;
+    setSaving(true);
+    try {
+      const res = await createStationUserAction(selectedStation.id, {
+        name: form.name.trim(),
+        phone: form.phone.trim() || null,
+        role_id: Number(form.roleId),
+        is_billable: null,
+      });
+      if (!res.success) {
+        toast.error(res.raw ?? res.error);
+        return;
+      }
+      toast.success(`${res.data.name} added to ${selectedStation.name}.`);
+      setAddOpen(false);
+      setReloadKey((key) => key + 1);
+    } finally {
+      setSaving(false);
+    }
   };
-
-  const selectedCard = selected ? cardOf(selected.id) : undefined;
 
   return (
     <div className="flex flex-col gap-4 p-4 lg:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">People &amp; cards</h2>
+          <h2 className="text-lg font-semibold tracking-tight">
+            People &amp; cards
+          </h2>
           <p className="text-xs text-muted-foreground">
-            People records and the card credentials that can authenticate at the washroom reader
+            Station people and the physical card credentials assigned to them
           </p>
         </div>
-        <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogTrigger render={<Button size="sm"><Plus aria-hidden />Add person</Button>} />
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Add person</DialogTitle>
-              <DialogDescription>
-                Creates a person record and a placeholder card credential.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-3 py-1 text-sm">
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-muted-foreground">Name</span>
-                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" />
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Category</span>
-                  <Select value={form.category} onValueChange={(v) => v && setForm({ ...form, category: v as PersonCategory })}>
-                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {CATEGORIES.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Assign as</span>
-                  <Select value={form.role} onValueChange={(v) => v && setForm({ ...form, role: v as PersonRole })}>
-                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {ROLES.map((r) => (
-                        <SelectItem key={r} value={r}>{r}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </label>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Valid from</span>
-                  <Input type="date" value={form.validFrom} onChange={(e) => setForm({ ...form, validFrom: e.target.value })} />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Valid to</span>
-                  <Input type="date" value={form.validTo} onChange={(e) => setForm({ ...form, validTo: e.target.value })} />
-                </label>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button size="sm" onClick={addPerson} disabled={!form.name.trim()}>
-                Create
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <div className="flex flex-wrap items-center gap-2">
+          {stations.length > 0 ? (
+            <Select value={stationId} onValueChange={(value) => value && setStationId(value)}>
+              <SelectTrigger className="h-8 w-56">
+                <SelectValue placeholder="Select a station" />
+              </SelectTrigger>
+              <SelectContent>
+                {stations.map((station) => (
+                  <SelectItem key={station.id} value={String(station.id)}>
+                    {station.name} ({station.station_code})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+          <Button
+            size="sm"
+            onClick={openAdd}
+            disabled={!canAddUser}
+            title={
+              canAddUser
+                ? "Add a person to this station"
+                : !hasStation
+                  ? "Create a station before adding people"
+                  : usersLoading
+                    ? "Loading station roles"
+                    : "No operational roles available"
+            }
+            className="disabled:cursor-not-allowed disabled:pointer-events-auto"
+          >
+            <Plus aria-hidden />
+            Add user
+          </Button>
+        </div>
       </div>
 
-      {/* summary strip */}
+      {!hasStation ? (
+        <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+          Add user is locked until a station exists.{" "}
+          <Link href="/stations" className="font-medium text-primary hover:underline">
+            Create a station first
+          </Link>
+          .
+        </div>
+      ) : null}
+
+      {hasStation && !cardDevice ? (
+        <div className="rounded-lg border border-led-amber/25 bg-led-amber/10 p-3 text-xs text-led-amber">
+          This station has no controller assigned. Card assignment stays locked
+          until a controller is attached in Stations.
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-lg border border-led-red/25 bg-led-red/10 p-3 text-xs text-led-red">
+          {error}
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          ["Total people", people.length],
-          ["Active cards", activeCards],
-          ["Expired cards", expiredCards],
-          ["Blocked cards", blockedCards],
+          ["Total people", users.length],
+          ["Cards assigned", activeCards],
+          ["No card", withoutCards],
+          ["Roles", roles.length],
         ].map(([label, value]) => (
           <div key={label} className="card-glow rounded-lg border bg-card px-3 py-2">
             <p className="text-xs text-muted-foreground">{label}</p>
@@ -204,43 +280,48 @@ function PeopleCardsView() {
         ))}
       </div>
 
-      {/* search + role/category filters */}
-      <Panel title="Directory">
+      <Panel
+        title="Station directory"
+        description={
+          selectedStation
+            ? `${selectedStation.name} · ${users.length} person(s)`
+            : "Select a station to see its people"
+        }
+        action={
+          baseLoading || usersLoading ? (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 aria-hidden className="size-3.5 animate-spin" />
+              Loading
+            </span>
+          ) : undefined
+        }
+      >
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <div className="relative min-w-52 flex-1">
-            <Search aria-hidden className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or card number" className="h-8 pl-8 text-xs" />
+            <Search
+              aria-hidden
+              className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search name, phone or card number"
+              className="h-8 pl-8 text-xs"
+            />
           </div>
-          <div role="group" aria-label="Category filter" className="inline-flex rounded-lg bg-muted p-0.5">
-            {(["All", ...CATEGORIES] as const).map((c) => (
-              <button
-                key={c}
-                type="button"
-                aria-pressed={category === c}
-                onClick={() => setCategory(c)}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  category === c ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-          <div role="group" aria-label="Role filter" className="inline-flex rounded-lg bg-muted p-0.5">
-            {(["All", ...ROLES] as const).map((r) => (
-              <button
-                key={r}
-                type="button"
-                aria-pressed={role === r}
-                onClick={() => setRole(r)}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  role === r ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {r === "Visitor" ? "Visitors" : r}
-              </button>
-            ))}
-          </div>
+          <Select value={roleFilter} onValueChange={(value) => value && setRoleFilter(value)}>
+            <SelectTrigger className="h-8 w-40">
+              <SelectValue placeholder="All roles" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All roles</SelectItem>
+              {roles.map((role) => (
+                <SelectItem key={role.id} value={String(role.id)}>
+                  {role.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Table>
@@ -248,156 +329,221 @@ function PeopleCardsView() {
             <TableRow>
               <TableHead>Person</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Category</TableHead>
+              <TableHead>Phone</TableHead>
               <TableHead>Card</TableHead>
               <TableHead>Validity</TableHead>
               <TableHead>Card status</TableHead>
+              <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((p) => {
-              const card = cardOf(p.id);
+            {filtered.map((user) => {
+              const card = user.active_card;
+              const canAssign = Boolean(cardDevice) && !card;
               return (
-                <TableRow key={p.id} className="cursor-pointer" onClick={() => setSelected(p)}>
-                  <TableCell className="font-medium">{p.name}</TableCell>
-                  <TableCell className="text-xs">{p.role}</TableCell>
-                  <TableCell>{p.category}</TableCell>
-                  <TableCell className="font-mono text-xs">{card?.masked ?? "—"}</TableCell>
+                <TableRow key={user.id}>
+                  <TableCell className="font-medium">
+                    {user.name}
+                    <span className="block font-mono text-[11px] text-muted-foreground">
+                      #{user.id}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-xs font-medium">{user.role.name}</span>
+                    <span className="block font-mono text-[11px] text-muted-foreground">
+                      {user.role.code}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {user.phone ?? "—"}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {card?.card_number ?? "—"}
+                  </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
-                    {card ? `${card.validFrom} → ${card.validTo}` : "—"}
+                    {card
+                      ? `${card.valid_from ?? "—"} → ${card.valid_until ?? "—"}`
+                      : "—"}
                   </TableCell>
                   <TableCell>
                     {card ? (
-                      <ToneBadge tone={card.status === "Active" ? "green" : card.status === "Blocked" ? "red" : "grey"}>
-                        {card.status}
+                      <ToneBadge
+                        tone={
+                          !card.is_valid ||
+                          card.sync_status === "failed" ||
+                          card.sync_status === "needs_reprovisioning"
+                            ? "red"
+                            : card.sync_status === "pending_verification" ||
+                                card.sync_status === "pending"
+                              ? "amber"
+                              : "green"
+                        }
+                      >
+                        {!card.is_valid
+                          ? "Inactive"
+                          : card.sync_status === "failed"
+                            ? "Sync failed"
+                            : card.sync_status === "needs_reprovisioning"
+                              ? "Reprovision"
+                              : card.sync_status === "pending_verification" ||
+                                  card.sync_status === "pending"
+                                ? "Pending sync"
+                                : "Assigned"}
                       </ToneBadge>
                     ) : (
-                      <span className="text-muted-foreground">No card</span>
+                      <ToneBadge tone="grey">No card</ToneBadge>
                     )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canAssign}
+                      onClick={() => setCardUser(user)}
+                      title={
+                        card
+                          ? "This person already has a card on record"
+                          : cardDevice
+                            ? "Scan and assign a card"
+                            : "Assign a controller to this station first"
+                      }
+                      className="disabled:cursor-not-allowed disabled:pointer-events-auto"
+                    >
+                      <Nfc aria-hidden />
+                      {card ? "Card assigned" : "Assign card"}
+                    </Button>
                   </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
-        {filtered.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">No people match the current filters.</p>
+        {!baseLoading && !usersLoading && filtered.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {hasStation
+              ? "No people match the current filters."
+              : "Create a station before adding people."}
+          </p>
         ) : null}
       </Panel>
 
-      {/* person detail drawer */}
-      <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
-          {selected ? (
-            <SheetHeader className="mt-2 gap-4 text-left">
-              <SheetTitle>{selected.name}</SheetTitle>
-              <SheetDescription>
-                {selected.id} · {selected.category} user
-              </SheetDescription>
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add user</DialogTitle>
+            <DialogDescription>
+              {selectedStation
+                ? `${selectedStation.name} · this person is not a dashboard login.`
+                : "Create a station first."}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={createUser} className="grid gap-3">
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                Full name
+              </span>
+              <Input
+                value={form.name}
+                onChange={(event) =>
+                  setForm({ ...form, name: event.target.value })
+                }
+                placeholder="Full name"
+                className="h-8 text-xs"
+                disabled={saving}
+                required
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                Phone (optional)
+              </span>
+              <Input
+                value={form.phone}
+                onChange={(event) =>
+                  setForm({ ...form, phone: event.target.value })
+                }
+                placeholder="+92 300 1234567"
+                className="h-8 text-xs"
+                disabled={saving}
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                Operational role
+              </span>
+              <Select
+                value={form.roleId}
+                onValueChange={(value) =>
+                  value && setForm({ ...form, roleId: value })
+                }
+                disabled={saving || roles.length === 0}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map((role) => (
+                    <SelectItem key={role.id} value={String(role.id)}>
+                      {role.name} ({role.code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+            <DialogFooter>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={saving || !form.name.trim() || !form.roleId}
+              >
+                {saving ? (
+                  <>
+                    <Loader2 aria-hidden className="animate-spin" />
+                    Adding…
+                  </>
+                ) : (
+                  "Add user"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-              <section>
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Admin assignment
-                </h3>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-muted-foreground">Role</span>
-                  <Select
-                    value={selected.role}
-                    onValueChange={(v) => v && setPersonRole(selected.id, v as PersonRole)}
-                  >
-                    <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {ROLES.map((r) => (
-                        <SelectItem key={r} value={r}>{r}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Station admin assigns each person as staff or visitor.
-                </p>
-              </section>
-
-              {selectedCard ? (
-                <>
-                  <section>
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Assigned credential
-                    </h3>
-                    <dl className="space-y-2 text-sm">
-                      <div className="flex justify-between gap-4 border-b pb-2">
-                        <dt className="text-muted-foreground">Card</dt>
-                        <dd className="font-mono">{selectedCard.masked}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4 border-b pb-2">
-                        <dt className="text-muted-foreground">Technology</dt>
-                        <dd>{selectedCard.tech}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4 border-b pb-2">
-                        <dt className="text-muted-foreground">Validity</dt>
-                        <dd className="font-mono text-xs">
-                          {selectedCard.validFrom} → {selectedCard.validTo}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-4 border-b pb-2">
-                        <dt className="text-muted-foreground">Schedule</dt>
-                        <dd>
-                          {SCHEDULES.find((s) => s.id === selectedCard.scheduleId)?.name ?? "—"}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt className="text-muted-foreground">Status</dt>
-                        <dd>
-                          <ToneBadge tone={selectedCard.status === "Active" ? "green" : selectedCard.status === "Blocked" ? "red" : "grey"}>
-                            {selectedCard.status}
-                          </ToneBadge>
-                        </dd>
-                      </div>
-                    </dl>
-                  </section>
-
-                  {/* card actions */}
-                  <section>
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Card actions
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedCard.status === "Active" ? (
-                        <>
-                          <Button variant="outline" size="sm" onClick={() => setCardStatus(selectedCard.id, "Blocked")}>
-                            Block card
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => setCardStatus(selectedCard.id, "Expired")}>
-                            Deactivate
-                          </Button>
-                        </>
-                      ) : (
-                        <Button size="sm" onClick={() => setCardStatus(selectedCard.id, "Active")}>
-                          Activate card
-                        </Button>
-                      )}
-                    </div>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Every card change is recorded in the admin audit trail.
-                    </p>
-                  </section>
-                </>
-              ) : (
-                <section>
-                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Card enrollment
-                  </h3>
-                  <div className="flex items-center gap-3 rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                    <Nfc aria-hidden className="size-5" />
-                    Present a 13.56 MHz MIFARE card at the reader to enroll it
-                    against this person.
-                  </div>
-                </section>
-              )}
-            </SheetHeader>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+      <Dialog
+        open={cardUser !== null}
+        onOpenChange={(open) => {
+          if (!open) setCardUser(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign card</DialogTitle>
+            <DialogDescription>
+              {cardUser?.name}
+              {selectedStation ? ` · ${selectedStation.name}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {cardUser && selectedStation && cardDevice ? (
+            <AssignCard
+              stationId={selectedStation.id}
+              userId={cardUser.id}
+              userName={cardUser.name}
+              deviceId={cardDevice.id}
+              onDone={() => {
+                setCardUser(null);
+                setReloadKey((key) => key + 1);
+              }}
+              onCancel={() => setCardUser(null)}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              This station has no controller assigned, so a card cannot be
+              enrolled.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
