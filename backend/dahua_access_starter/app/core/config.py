@@ -11,6 +11,7 @@ load_dotenv(BASE_DIR / ".env", override=False)
 DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data"))).resolve()
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'dahua_access.db'}")
 APP_NAME = os.getenv("APP_NAME", "Dahua Access Control API")
+DEVICE_ENCRYPTION_KEY = os.getenv("DEVICE_ENCRYPTION_KEY", "").strip() or None
 SDK_LOG_DIR = Path(os.getenv("SDK_LOG_DIR", str(DATA_DIR / "sdk_logs"))).resolve()
 SDK_CONNECT_TIMEOUT_MS = int(os.getenv("SDK_CONNECT_TIMEOUT_MS", "5000"))
 SDK_CONNECT_RETRY = int(os.getenv("SDK_CONNECT_RETRY", "1"))

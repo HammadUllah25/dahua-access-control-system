@@ -12,6 +12,12 @@ class AccessEventRead(BaseModel):
     device_name: str | None
     device_host: str | None
     device_serial_number: str | None
+    station_id: int | None = None
+    station_name: str | None = None
+    card_role: str | None = None
+    is_billable: bool = False
+    rate_applied: float | None = None
+    currency: str = "PKR"
     alarm_type: int
     event_id: int | None
     sequence: int | None

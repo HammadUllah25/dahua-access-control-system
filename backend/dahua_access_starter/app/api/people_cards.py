@@ -10,10 +10,11 @@ from app.core.database import get_db
 from app.models.device import Device
 from app.models.person import Person
 from app.models.access_card import AccessCard
+from app.models.station_card_assignment import StationCardAssignment
 from app.schemas.person import PersonCreate, PersonUpdate, PersonRead
 from app.schemas.access_card import (
     AccessCardCreate, AccessCardUpdate, AccessCardRead,
-    DeviceCardRecordRead, DevicePersonProfileRead,
+    DeviceCardRecordRead, DevicePersonProfileRead, DeviceCardRecordDeleteRequest,
 )
 from app.schemas.card_enrollment import (
     CardEnrollmentStart, CardEnrollmentRead, CardEnrollmentConfirm,
@@ -201,7 +202,7 @@ def _write_card_assignment(
         card_name=card_name,
         device_record_no=record_no,
         card_type=card_type_map[payload.card_type],
-        device_card_status=0,
+        device_card_status=0 if payload.is_valid else 4,
         is_valid=payload.is_valid,
         valid_from=payload.valid_from,
         valid_until=payload.valid_until,
@@ -411,6 +412,102 @@ def list_controller_cards(device_id: int, db: Session = Depends(get_db)):
 
 
 
+
+
+@router.delete("/devices/{device_id}/cards/device-records/{record_number}")
+def delete_controller_card_record(
+    device_id: int,
+    record_number: int,
+    payload: DeviceCardRecordDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    """Delete exactly one physical Dahua card record; never delete cloud history.
+
+    The caller must supply the exact card number shown by the controller and a
+    record-specific confirmation string. Any linked cloud assignment blocks
+    deletion so this operation cannot silently orphan application records.
+    """
+    if record_number <= 0:
+        raise HTTPException(status_code=422, detail="record_number must be positive")
+    device = _device_or_404(db, device_id)
+    expected_confirmation = f"DELETE_CONTROLLER_CARD:{record_number}:{payload.card_number}"
+    if payload.confirmation != expected_confirmation:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Confirmation mismatch. Send exactly: {expected_confirmation}",
+        )
+
+    # Do not delete a physical credential while a cloud-side assignment still
+    # refers to it. Leading zeroes in hexadecimal card UIDs are insignificant
+    # for matching, but the confirmation must use the exact controller value.
+    def canonical_card(value: str) -> str:
+        return (value or "").strip().upper().lstrip("0") or "0"
+
+    station_links = db.query(StationCardAssignment).filter(
+        StationCardAssignment.device_id == device_id,
+    ).all()
+    linked_station_assignment = next((
+        row for row in station_links
+        if row.device_record_no == record_number
+        or canonical_card(row.card_number) == canonical_card(payload.card_number)
+    ), None)
+    legacy_assignment = db.query(AccessCard).filter(
+        AccessCard.device_id == device_id,
+    ).all()
+    linked_legacy_assignment = next((
+        row for row in legacy_assignment
+        if row.device_record_no == record_number
+        or canonical_card(row.card_number) == canonical_card(payload.card_number)
+    ), None)
+    if linked_station_assignment or linked_legacy_assignment:
+        raise HTTPException(
+            status_code=409,
+            detail="This controller card is still linked to an application assignment. Reconcile or revoke the cloud assignment first.",
+        )
+
+    _ensure_connected(device, db)
+    try:
+        controller_rows = access_cards.list_device_cards(device_id)
+    except AccessCardSDKError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not verify the controller card before deletion: {exc}") from exc
+
+    matches = [
+        row for row in controller_rows
+        if int(row.get("record_number", -1)) == record_number
+        and canonical_card(str(row.get("card_number", ""))) == canonical_card(payload.card_number)
+    ]
+    if len(matches) != 1:
+        raise HTTPException(
+            status_code=404 if not matches else 409,
+            detail=("No exact controller card record matched the supplied record number and card number."
+                    if not matches else "More than one controller record matched; no deletion was performed."),
+        )
+
+    try:
+        access_cards.delete_device_card(device_id, record_number)
+    except AccessCardSDKError as exc:
+        device.inventory_status = "unknown"
+        device.observed_card_count = None
+        db.commit()
+        raise HTTPException(status_code=502, detail=f"Dahua controller card deletion failed: {exc}") from exc
+
+    # Hardware deletion succeeded. Do not modify cloud card/user/event history.
+    device.inventory_status = "unknown"
+    device.observed_card_count = None
+    device.last_inventory_at = None
+    db.commit()
+    return {
+        "deleted": True,
+        "deletion_scope": "dahua_controller_only",
+        "device_id": device_id,
+        "record_number": record_number,
+        "card_number": matches[0]["card_number"],
+        "controller_contacted": True,
+        "controller_changed": True,
+        "application_database_changed": False,
+        "inventory_status": "unknown",
+        "note": "The exact Dahua card record was deleted. Application assignments and access-event history were not deleted. Run a fresh device inventory check.",
+    }
 
 @router.get(
     "/devices/{device_id}/person-records/{device_user_id}",
@@ -666,13 +763,63 @@ def update_ic_card(device_id: int, assignment_id: int, payload: AccessCardUpdate
 
     for key, value in values.items():
         setattr(assignment, key, value)
-    assignment.device_card_status = 0
-    assignment.sync_status = "synced"
+    assignment.device_card_status = 0 if values["is_valid"] else 4
+    assignment.sync_status = "pending_verification"
     assignment.last_sync_error = None
     assignment.last_synced_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(assignment)
     return assignment
+
+
+@router.delete("/devices/{device_id}/cards/{assignment_id}/legacy-assignment")
+def delete_legacy_card_assignment_only(
+    device_id: int,
+    assignment_id: int,
+    db: Session = Depends(get_db),
+):
+    """Delete only the old person-linked DB row; never contact the Dahua controller.
+
+    Use this when migrating from Person/AccessCard to StationCardAssignment.
+    The station-based assignment (if one exists for the same card) is a separate
+    row and is intentionally left untouched. No SDK call or device connection
+    is performed by this endpoint.
+    """
+    assignment = db.query(AccessCard).filter(
+        AccessCard.id == assignment_id,
+        AccessCard.device_id == device_id,
+    ).first()
+    if assignment is None:
+        raise HTTPException(status_code=404, detail="Legacy card assignment not found for this device")
+
+    # Capture a minimal receipt before deleting the legacy row.
+    deleted_record = {
+        "assignment_id": assignment.id,
+        "person_id": assignment.person_id,
+        "device_id": assignment.device_id,
+        "card_number": assignment.card_number,
+    }
+    station_assignment = db.query(StationCardAssignment).filter(
+        StationCardAssignment.device_id == device_id,
+        StationCardAssignment.card_number == assignment.card_number,
+    ).first()
+
+    try:
+        db.delete(assignment)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "deleted": True,
+        "deletion_type": "legacy_database_only",
+        **deleted_record,
+        "controller_modified": False,
+        "station_assignment_preserved": station_assignment is not None,
+        "station_assignment_id": station_assignment.id if station_assignment is not None else None,
+        "note": "Only the legacy person-linked database assignment was deleted. No Dahua command was sent.",
+    }
 
 
 @router.delete("/devices/{device_id}/cards/{assignment_id}")

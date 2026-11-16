@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -16,6 +16,7 @@ class Device(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    station_id: Mapped[int | None] = mapped_column(ForeignKey("stations.id", ondelete="SET NULL"), nullable=True, index=True)
     connection_type: Mapped[str] = mapped_column(String(20), nullable=False, default="ip_domain")
     host: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     port: Mapped[int] = mapped_column(Integer, nullable=False, default=37777)
@@ -34,6 +35,12 @@ class Device(Base):
     last_tcp_reachable_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_connect_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    inventory_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown", server_default="unknown")
+    last_inventory_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expected_card_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    observed_card_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    station = relationship("Station", back_populates="devices")
+    station_card_assignments = relationship("StationCardAssignment", back_populates="device", cascade="all, delete-orphan")
     cards = relationship("AccessCard", back_populates="device", cascade="all, delete-orphan")
     access_events = relationship("AccessEvent", back_populates="device")

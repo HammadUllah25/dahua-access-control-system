@@ -53,3 +53,8 @@ class DeviceRead(BaseModel):
     last_tcp_reachable_at: datetime | None
     last_connect_attempt_at: datetime | None
     consecutive_failures: int
+    station_id: int | None = None
+    inventory_status: str = "unknown"
+    last_inventory_at: datetime | None = None
+    expected_card_count: int | None = None
+    observed_card_count: int | None = None

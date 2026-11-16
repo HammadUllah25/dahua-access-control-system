@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from cryptography.fernet import Fernet, InvalidToken
 
-from app.core.config import DATA_DIR
+from app.core.config import DATA_DIR, DEVICE_ENCRYPTION_KEY
 
 
 _KEY_PATH = DATA_DIR / "device_secret.key"
@@ -15,6 +15,15 @@ def _fernet() -> Fernet:
     IMPORTANT: Back up device_secret.key securely. If it is lost, saved device
     passwords cannot be decrypted and must be entered again.
     """
+    # For cloud/multi-instance deployments, inject one persistent Fernet key
+    # from the platform secret manager so every API/worker can decrypt the same
+    # saved device credentials. Never rotate this key without re-encrypting rows.
+    if DEVICE_ENCRYPTION_KEY:
+        try:
+            return Fernet(DEVICE_ENCRYPTION_KEY.encode("ascii"))
+        except Exception as exc:
+            raise RuntimeError("DEVICE_ENCRYPTION_KEY must be a valid URL-safe base64 Fernet key") from exc
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not _KEY_PATH.exists():
         key = Fernet.generate_key()

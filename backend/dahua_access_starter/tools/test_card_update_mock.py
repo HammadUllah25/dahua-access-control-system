@@ -114,7 +114,7 @@ def main() -> None:
         )
 
         assert fake.find_record_calls == 1, "Expected exactly one FindRecord call"
-        assert fake.condition_flags == (True, False, False), "FindRecord should target the original card UID"
+        assert fake.condition_flags == (False, False, False), "ASI1201E update lookup must use the supported unfiltered inventory query"
         assert fake.find_out_size_ok, "NET_OUT_FIND_RECORD_PARAM.dwSize must be initialized"
         assert fake.find_next_calls == 1
         assert fake.find_close_calls == 1
@@ -125,7 +125,8 @@ def main() -> None:
         assert fake.updated_record.szCardName.decode("utf-8") == "Hammad RFID Card - Updated"
         assert bool(fake.updated_record.bIsValid) is False
         assert bool(fake.updated_record.bPersonStatus) is False
-        print("PASS: update initializes FindRecord output size, preserves record number, and calls RECORDSET_UPDATE.")
+        assert int(fake.updated_record.emStatus) == 4, "Invalid cards must be written with Dahua FREEZE state (4)."
+        print("PASS: update uses unfiltered inventory lookup, matches the original record number and UID, and preserves the native record.")
         print("NOTE: this is an offline mock; it does not prove the ASI1201E firmware accepts card updates.")
     finally:
         access_cards._device_sdk._client = original_client

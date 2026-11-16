@@ -415,6 +415,84 @@ class DahuaSDK:
                 logger.exception("Could not stop Dahua alarm listening | login_handle=%s", login_handle)
                 return False
 
+    def get_new_dev_config_text(
+        self, login_handle: int, command: str, channel: int = 0, buffer_size: int = 262144
+    ) -> str:
+        """Read a Dahua generic configuration payload without modifying the device."""
+        from ctypes import c_char, sizeof
+
+        if not login_handle:
+            raise DeviceLoginError("A valid Dahua login handle is required.")
+        if not command or len(command) > 64:
+            raise ValueError("A valid Dahua configuration command is required.")
+        if not 4096 <= buffer_size <= 2_097_152:
+            raise ValueError("Configuration buffer size is outside the allowed range.")
+
+        with self._lock:
+            client = self.client
+            out_buffer = (c_char * buffer_size)()
+            ok = client.GetNewDevConfig(
+                login_handle, command, int(channel), out_buffer, sizeof(out_buffer), 0, 5000
+            )
+            if not ok:
+                raise DeviceLoginError(
+                    f"GetNewDevConfig({command}, channel={channel}) failed: "
+                    f"{client.GetLastErrorMessage()}"
+                )
+            raw = bytes(out_buffer).rstrip(b"\x00")
+            if not raw:
+                raise DeviceLoginError(
+                    f"Dahua returned an empty {command} configuration response."
+                )
+            return raw.decode("utf-8", errors="replace").strip()
+
+    def set_new_dev_config_text(
+        self,
+        login_handle: int,
+        command: str,
+        channel: int,
+        body: str,
+        *,
+        restart: bool = False,
+        waittime: int = 5000,
+    ) -> None:
+        """Write a Dahua generic configuration JSON payload through NetSDK."""
+        from ctypes import create_string_buffer
+
+        if not login_handle:
+            raise DeviceLoginError("A valid Dahua login handle is required.")
+        if not command or len(command) > 64:
+            raise ValueError("A valid Dahua configuration command is required.")
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError("A non-empty Dahua configuration JSON payload is required.")
+
+        encoded = body.encode("utf-8")
+        # The NetSDK wrapper expects a ctypes character buffer and the payload
+        # length excluding the trailing NUL byte. Keep the buffer alive for the
+        # duration of the native call.
+        in_buffer = create_string_buffer(encoded, len(encoded) + 1)
+
+        with self._lock:
+            client = self.client
+            ok = client.SetNewDevConfig(
+                login_handle,
+                command,
+                int(channel),
+                in_buffer,
+                len(encoded),
+                0,
+                int(restart),
+                int(waittime),
+            )
+            if not ok:
+                try:
+                    error_message = client.GetLastErrorMessage()
+                except Exception:
+                    error_message = "Could not read the NetSDK error message."
+                raise DeviceLoginError(
+                    f"SetNewDevConfig({command}, channel={channel}) failed: {error_message}"
+                )
+
     def logout(self, handle: int) -> None:
         if not self._initialized or self._client is None or not handle:
             return

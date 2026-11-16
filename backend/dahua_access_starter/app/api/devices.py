@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,9 +20,24 @@ from app.services.realtime import (
     publish_device_status,
 )
 from app.services.secret_store import encrypt_secret
+from app.services.door_config import (
+    DoorConfigError,
+    get_door_sensor_config,
+    set_door_sensor_config,
+)
+
+
+class DoorSensorUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sensor_enabled: bool
+    door_index: int = Field(default=0, ge=0)
 
 
 router = APIRouter(prefix="/devices", tags=["Devices"])
+# Keep door configuration separate so the operations do not inherit the
+# Devices tag and appear twice in Swagger UI.
+door_config_router = APIRouter(prefix="/devices", tags=["Door Configuration"])
+
 
 
 def _get_device(db: Session, device_id: int) -> Device:
@@ -117,6 +133,58 @@ def _handle_identity_integrity_error(
             "is already registered."
         )
     )
+
+
+@door_config_router.get("/{device_id}/door-config")
+def read_door_config(
+    device_id: int,
+    door_index: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """Read the physical controller's door sensor setting (door index is zero-based)."""
+    device = _get_device(db, device_id)
+    try:
+        config = get_door_sensor_config(device, door_index=door_index)
+    except DoorConfigError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "device_id": config.device_id,
+        "door_index": config.door_index,
+        "sensor_enabled": config.sensor_enabled,
+        "close_check_sensor": config.close_check_sensor,
+        "close_timeout": config.close_timeout,
+        "door_not_closed_alarm_enable": config.door_not_closed_alarm_enable,
+        "source": "dahua_netsdk_accesscontrol_readback",
+    }
+
+
+@door_config_router.put("/{device_id}/door-config")
+def update_door_config(
+    device_id: int,
+    payload: DoorSensorUpdate,
+    db: Session = Depends(get_db),
+):
+    """Change only the door sensor flag and verify it by reading the controller back."""
+    device = _get_device(db, device_id)
+    try:
+        config = set_door_sensor_config(
+            device,
+            sensor_enabled=payload.sensor_enabled,
+            door_index=payload.door_index,
+        )
+    except DoorConfigError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "message": "Door sensor configuration updated and verified on the Dahua controller.",
+        "device_id": config.device_id,
+        "door_index": config.door_index,
+        "sensor_enabled": config.sensor_enabled,
+        "close_check_sensor": config.close_check_sensor,
+        "close_timeout": config.close_timeout,
+        "door_not_closed_alarm_enable": config.door_not_closed_alarm_enable,
+        "verified": True,
+        "source": "dahua_netsdk_accesscontrol_readback",
+    }
 
 
 @router.get("", response_model=list[DeviceRead])
@@ -400,6 +468,22 @@ def delete_device(
     db: Session = Depends(get_db)
 ):
     device = _get_device(db, device_id)
+
+    # Station card assignments are the cloud-side inventory and must not be
+    # silently destroyed when a controller is removed or replaced.
+    from app.models.station_card_assignment import StationCardAssignment
+    station_assignments = db.query(StationCardAssignment).filter(
+        StationCardAssignment.device_id == device_id
+    ).count()
+    if station_assignments:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Device has {station_assignments} station card assignment(s). "
+                "Reassign or formally retire these cards before deleting the controller. "
+                "The cloud card inventory is preserved by design."
+            ),
+        )
 
     sessions.disconnect(device.id)
 

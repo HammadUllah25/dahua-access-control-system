@@ -1,0 +1,345 @@
+
+Login successful. Read-only queries starting.
+No configuration will be changed.
+
+=== command='AccessControl', channel=0 ===
+QUERY SUCCEEDED; returned buffer bytes: 2253
+{
+  "id": 1812,
+  "params": {
+    "channel": 0,
+    "table": {
+      "AutoRemoteCheck": {
+        "Enable": false,
+        "Time": 255
+      },
+      "BreakInAlarmEnable": false,
+      "CardNoConvert": false,
+      "CloseAlwaysTime": 255,
+      "CloseCheckSensor": false,
+      "CloseTimeout": 60,
+      "DoorNotClosedAlarmEnable": 0,
+      "DoorNotClosedReaderAlarmTime": 0,
+      "DuressAlarmEnable": false,
+      "FirstEnter": {
+        "Enable": false,
+        "Status": "Normal",
+        "Time": 255
+      },
+      "HolidayTime": 255,
+      "Method": 7,
+      "OpenAlwaysTime": 255,
+      "RemoteCheck": false,
+      "RepeatEnterAlarm": false,
+      "SensorEnable": false,
+      "State": "Normal",
+      "TimeSchedule": [
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ]
+      ],
+      "UnlockHoldInterval": 2000,
+      "Wiegand26Cut": false,
+      "WiegandReverse": false
+    }
+  },
+  "result": true
+}
+
+=== command='AccessControl', channel=-1 ===
+QUERY SUCCEEDED; returned buffer bytes: 2253
+{
+  "id": 3604,
+  "params": {
+    "channel": 0,
+    "table": {
+      "AutoRemoteCheck": {
+        "Enable": false,
+        "Time": 255
+      },
+      "BreakInAlarmEnable": false,
+      "CardNoConvert": false,
+      "CloseAlwaysTime": 255,
+      "CloseCheckSensor": false,
+      "CloseTimeout": 60,
+      "DoorNotClosedAlarmEnable": 0,
+      "DoorNotClosedReaderAlarmTime": 0,
+      "DuressAlarmEnable": false,
+      "FirstEnter": {
+        "Enable": false,
+        "Status": "Normal",
+        "Time": 255
+      },
+      "HolidayTime": 255,
+      "Method": 7,
+      "OpenAlwaysTime": 255,
+      "RemoteCheck": false,
+      "RepeatEnterAlarm": false,
+      "SensorEnable": false,
+      "State": "Normal",
+      "TimeSchedule": [
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ],
+        [
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-23:59:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          },
+          {
+            "Method": 7,
+            "TimeSection": "00:00:00-00:00:00"
+          }
+        ]
+      ],
+      "UnlockHoldInterval": 2000,
+      "Wiegand26Cut": false,
+      "WiegandReverse": false
+    }
+  },
+  "result": true
+}
+
+=== command='Alarm', channel=0 ===
+QUERY FAILED: User parameter is illegal
+
+=== command='Alarm', channel=-1 ===
+QUERY FAILED: User parameter is illegal
+
+Read-only probe finished.
