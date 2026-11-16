@@ -33,3 +33,24 @@ Python compilation, API import, schema validation, and the offline confirmation-
 ## Verification boundary
 
 The lookup initialization fix is covered by an offline mock test. The real ASI1201E must still be tested using a spare card: the mock cannot establish whether this firmware accepts `RECORDSET_UPDATE` or whether setting `bIsValid=False` revokes physical access.
+
+## Station-card recovery and legacy-card adoption update
+
+- Added `POST /stations/{station_id}/cards/adopt-existing` to convert a pre-existing person-based `AccessCard` row into a station `USER` or `STAFF` assignment without touching the physical controller.
+- The adoption route preserves the legacy Person and AccessCard rows, defaults `USER` to billable and `STAFF` to non-billable, clears the old controller record number, and marks the new station assignment as requiring reprovisioning.
+- The existing `POST /devices/{device_id}/reprovision` endpoint restores the adopted station assignments after an administrator confirms a factory reset.
+- Added a guard against repeating a confirmed restore when a prior attempt is running, failed, or awaiting verification; this avoids duplicate native card inserts when SDK inventory readback is unavailable.
+- Added `POST /devices/{device_id}/reprovision/manual-verification` for an administrator to record SmartPSS review and successful physical scans when the device firmware does not support SDK inventory readback.
+- Added an offline regression test covering preservation of legacy rows, USER/STAFF assignment, confirmed reprovision, duplicate-retry protection, and manual verification.
+- Added `RECOVERY_STEPS_CURRENT_INSTALLATION.md` with exact steps for the current Station ID 1 / Device ID 1 setup. It warns not to adopt `0B56` unless it is confirmed to be a real physical card.
+
+## Verification boundary
+
+All route logic and the regression tests run with mocked SDK calls. This environment cannot connect to the user's Windows-hosted ASI1201E or validate the native card insert against its current firmware. The first restore must be checked in SmartPSS and with a physical card scan.
+
+
+## Version 1.1.5 — ASI1201E reactivation lookup compatibility
+
+- Updated `_find_native_records()` to use the unfiltered card inventory query already supported by the working inventory-list path. It now matches the controller record number and UID locally before updating.
+- Added an offline mock regression assertion that the update lookup does not enable the unsupported card-number filter.
+- This avoids the filtered `FindRecord` request that failed on the reported ASI1201E. Physical `RECORDSET_UPDATE` acceptance remains to be verified on the actual controller.

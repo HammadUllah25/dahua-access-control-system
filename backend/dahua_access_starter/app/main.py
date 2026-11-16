@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from pathlib import Path
 
-from app.api.devices import router as devices_router
+from app.api.devices import (
+    router as devices_router,
+    door_config_router as door_config_router,
+)
 from app.api.device_initialization import router as device_initialization_router
-from app.api.people_cards import router as people_cards_router
-from app.api.network import router as network_router
 from app.api.access_events import router as access_events_router
 from app.api.realtime import router as realtime_router
+from app.api.stations import router as stations_router
+from app.api.station_users import router as station_users_router
 from app.core.config import APP_NAME
 from app.core.database import (
     Base,
@@ -17,8 +22,14 @@ from app.core.database import (
     ensure_person_import_columns,
     ensure_access_card_import_columns,
     ensure_device_identity_columns,
+    ensure_station_platform_columns,
+    ensure_station_user_event_columns,
+    seed_operational_roles,
 )
-from app.models import Device, Person, AccessCard, AccessEvent  # noqa: F401 - register model metadata
+from app.models import (
+    Device, Person, AccessCard, AccessEvent, Station, StationCardAssignment,
+    StationRate, CashCollection, DeviceSyncJob, OperationalRole, StationUser, UserCardAssignment,
+)  # noqa: F401 - register model metadata
 from app.services.access_event_service import event_service
 from app.services.device_sessions import sessions
 from app.services.device_monitor import monitor
@@ -31,6 +42,9 @@ async def lifespan(app: FastAPI):
     ensure_person_import_columns()
     ensure_access_card_import_columns()
     ensure_device_identity_columns()
+    ensure_station_platform_columns()
+    ensure_station_user_event_columns()
+    seed_operational_roles()
     event_service.start()
     monitor.start()
     yield
@@ -41,21 +55,25 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=APP_NAME,
-    version="0.9.0",
+    version="1.1.6",
     description=(
         "API for Dahua access-controller registration, LAN initialization, monitoring, "
-        "people and IC-card management, timed RFID card enrollment, Ethernet adapter discovery, "
-        "and persisted access events."
+        "station operational users and predefined/custom roles linked to RFID cards, "
+        "usage and cash reporting, "
+        "device inventory checks and controlled cloud-to-device recovery."
     ),
     lifespan=lifespan,
 )
 
 app.include_router(devices_router)
+app.include_router(door_config_router)
 app.include_router(device_initialization_router)
-app.include_router(people_cards_router)
-app.include_router(network_router)
+# Legacy People/IC Card and standalone Network routers are intentionally not mounted.
+# Their underlying models/services remain in the package for database compatibility.
 app.include_router(access_events_router)
 app.include_router(realtime_router)
+app.include_router(stations_router)
+app.include_router(station_users_router)
 
 
 @app.get("/health", tags=["System"])
@@ -80,3 +98,11 @@ def sdk_status():
         "device_monitor_running": monitor.status()["running"],
         "event_persistence_running": event_service._running,
     }
+
+
+_DASHBOARD_FILE = Path(__file__).resolve().parent / "static" / "dashboard.html"
+
+
+@app.get("/dashboard-ui", include_in_schema=False)
+def dashboard_ui():
+    return FileResponse(_DASHBOARD_FILE)

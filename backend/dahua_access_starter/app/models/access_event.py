@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text
+from decimal import Decimal
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -28,6 +29,16 @@ class AccessEvent(Base):
     device_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     device_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     device_serial_number: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Station and card-role fields are immutable snapshots taken when the event is persisted.
+    station_id: Mapped[int | None] = mapped_column(ForeignKey("stations.id", ondelete="SET NULL"), nullable=True, index=True)
+    station_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    card_role: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    station_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    station_user_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    is_billable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    rate_applied: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="PKR", server_default="PKR")
+    source_event_key: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True, index=True)
 
     alarm_type: Mapped[int] = mapped_column(Integer, nullable=False)
     event_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
@@ -56,3 +67,4 @@ class AccessEvent(Base):
     raw_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     device = relationship("Device", back_populates="access_events")
+    station = relationship("Station")

@@ -113,3 +113,101 @@ def ensure_device_identity_columns() -> None:
             connection.execute(text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_devices_mac_address ON devices (mac_address)"
             ))
+
+
+def ensure_station_platform_columns() -> None:
+    """Add station-aware inventory and billing snapshots to existing databases.
+
+    Existing person-based records and access events are kept. New columns are
+    nullable/defaulted so a previous SQLite or PostgreSQL installation can
+    upgrade without dropping or rewriting historical data.
+    """
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    dialect = engine.dialect.name
+    bool_false = "FALSE" if dialect == "postgresql" else "0"
+    datetime_type = "TIMESTAMP WITH TIME ZONE" if dialect == "postgresql" else "DATETIME"
+    if "devices" in tables:
+        existing = {column["name"] for column in inspector.get_columns("devices")}
+        additions = {
+            "station_id": "INTEGER NULL",
+            "inventory_status": "VARCHAR(32) NOT NULL DEFAULT 'unknown'",
+            "last_inventory_at": f"{datetime_type} NULL",
+            "expected_card_count": "INTEGER NULL",
+            "observed_card_count": "INTEGER NULL",
+        }
+        with engine.begin() as connection:
+            for name, definition in additions.items():
+                if name not in existing:
+                    connection.execute(text(f"ALTER TABLE devices ADD COLUMN {name} {definition}"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_devices_station_id ON devices (station_id)"))
+    if "access_events" in tables:
+        existing = {column["name"] for column in inspector.get_columns("access_events")}
+        additions = {
+            "station_id": "INTEGER NULL",
+            "station_name": "VARCHAR(120) NULL",
+            "card_role": "VARCHAR(20) NULL",
+            "is_billable": f"BOOLEAN NOT NULL DEFAULT {bool_false}",
+            "rate_applied": "NUMERIC(12, 2) NULL",
+            "currency": "VARCHAR(3) NOT NULL DEFAULT 'PKR'",
+            "source_event_key": "VARCHAR(128) NULL",
+        }
+        with engine.begin() as connection:
+            for name, definition in additions.items():
+                if name not in existing:
+                    connection.execute(text(f"ALTER TABLE access_events ADD COLUMN {name} {definition}"))
+        with engine.begin() as connection:
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_access_events_station_received ON access_events (station_id, received_at)"))
+            # Nullable keys allow historical events and SDK messages without a stable native sequence.
+            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_access_events_source_event_key ON access_events (source_event_key)"))
+
+
+def ensure_station_user_event_columns() -> None:
+    """Add station-user snapshots to existing access-event tables additively."""
+    inspector = inspect(engine)
+    if "access_events" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("access_events")}
+    additions = {
+        "station_user_id": "INTEGER NULL",
+        "station_user_name": "VARCHAR(120) NULL",
+    }
+    with engine.begin() as connection:
+        for name, definition in additions.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE access_events ADD COLUMN {name} {definition}"))
+        connection.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_access_events_station_user_id ON access_events (station_user_id)"
+        ))
+
+
+def seed_operational_roles() -> None:
+    """Insert predefined station RFID roles once; never overwrite customizations."""
+    from app.models.operational_role import OperationalRole
+
+    defaults = (
+        ("MANAGER", "Manager", "Station manager", False),
+        ("ADMIN", "Admin", "Station administrator", False),
+        ("STAFF", "Staff", "Station staff member", False),
+        ("CUSTOMER", "Customer", "Washroom customer", True),
+    )
+    db = SessionLocal()
+    try:
+        for code, name, description, billable in defaults:
+            exists = db.query(OperationalRole).filter(
+                OperationalRole.station_id.is_(None),
+                OperationalRole.code == code,
+            ).first()
+            if exists is None:
+                db.add(OperationalRole(
+                    station_id=None,
+                    code=code,
+                    name=name,
+                    description=description,
+                    is_system=True,
+                    default_is_billable=billable,
+                    is_active=True,
+                ))
+        db.commit()
+    finally:
+        db.close()

@@ -4,13 +4,16 @@ FastAPI backend for Dahua ASI1201E access controllers using the Dahua NetSDK Pyt
 
 ## Current modules
 
-- Device registration, connection/disconnection and automatic TCP health monitoring.
-- Central personnel records (`/persons`).
-- IC/MIFARE card assignment to a specific controller (`/devices/{device_id}/cards`).
-- Scan-to-enroll workflow: capture a card UID, write a controller IC-card record, and link it to the selected central person (`/devices/{device_id}/card-enrollments`).
-- Native controller card query (`/devices/{device_id}/cards/device-records`).
-- Native controller card insert, update and remove through NetSDK record-set operations.
-- Person-to-card assignment lookup across registered controllers (`/persons/{person_id}/cards`).
+**Version 1.1.5 API surface:** the legacy People and IC Cards router (`/persons/*` and old `/devices/{device_id}/cards/*`) and standalone Network router (`/api/network/interfaces`) are disabled and return 404. The required `/device-initialization/interfaces` endpoint remains available. Historical sections below may mention retired endpoints; do not treat those examples as active API routes.
+
+
+- Device registration, connection/disconnection and TCP health monitoring.
+- **Station-user RFID workflow:** each named station user has one active RFID card and one predefined or custom operational role (`MANAGER`, `ADMIN`, `STAFF`, `CUSTOMER`, or a station-defined role).
+- Billability is a separate user-level setting that defaults from the selected role; only qualifying successful ENTRY events for billable users can create usage charges.
+- Effective-dated per-station rates, expected-collection calculations, cash collection records and outstanding balances.
+- Station, date-range, trend and card-wise reporting APIs, plus the built-in read-only dashboard at `/dashboard-ui`.
+- Cloud-owned card assignments, controller inventory checks and administrator-confirmed reprovisioning after a verified factory reset.
+- Legacy person-based API modules and data models are retained for database compatibility, but their HTTP router is not mounted in version 1.1.5. New station registrations use the station-user and user-bound card-enrollment APIs documented below.
 
 ## Windows installation (provided SDK wheel)
 
@@ -18,7 +21,7 @@ FastAPI backend for Dahua ASI1201E access controllers using the Dahua NetSDK Pyt
 2. Keep your existing `data/dahua_access.db`, `data/device_secret.key`, and any local `.env` file. Do not replace them with files from another machine.
 3. Double-click `install.bat`. It creates the project-local `.venv`, installs `requirements.txt`, installs the bundled Dahua NetSDK wheel from `vendor/`, and runs a setup check.
 4. Double-click `run.bat` to start the API.
-5. Open `http://127.0.0.1:8000/docs`.
+5. Open `http://127.0.0.1:8000/dashboard-ui` for the read-only station dashboard or `http://127.0.0.1:8000/docs` for setup and management APIs.
 
 The project-local `.venv` is intentional: the NetSDK wheel must be installed into the same interpreter that starts Uvicorn. Do not rely on a separate `backend/venv` or a globally installed Python package.
 
@@ -134,7 +137,9 @@ Open `http://127.0.0.1:8000/docs`.
 
 Keep your existing `data` folder, `device_secret.key`, and SQLite database when replacing the source. The installer creates a fresh project-local `.venv`. Existing device/person/card data is preserved; startup migrations are additive.
 
-## API workflow
+## Legacy API workflow: person-based card assignment
+
+This older workflow is retained for existing projects and is not required for the station-first USER/STAFF model described later in this README.
 
 ### 1. Create a central person
 
@@ -287,7 +292,7 @@ Additional endpoints:
 
 Only one active enrollment is allowed per device at a time. Enrollment sessions are held in backend memory and are cleared when the API process restarts. A failed confirmation leaves the captured UID available for retry. The normal card-assignment helper attempts a compensating controller-card delete if the hardware insert succeeds but the local database commit fails; verify controller records if that cleanup reports an error.
 
-**Hardware verification required:** the SDK structures and insert/remove operations are checked against the supplied NetSDK 3.060 Python wheel, but this environment cannot verify that the ASI1201E firmware reports an unknown card UID or accepts the native card INSERT operation. Test with one spare card and one test person first. Confirm `status=captured`, then inspect `GET /devices/{device_id}/cards/device-records` and `GET /devices/{device_id}/cards`. Finally test the physical door and its configured schedule before using real access credentials.
+**Hardware verification required:** the SDK structures and insert/remove operations are checked against the supplied NetSDK 3.060 Python wheel, but this environment cannot verify that the ASI1201E firmware reports an unknown card UID or accepts the native card INSERT operation. Test with one spare card and one test person first. Confirm `status=captured`, then run `POST /devices/{device_id}/inventory-check` and confirm the inventory reports `in_sync`. Finally test the physical door and its configured schedule before using real access credentials.
 
 ## Live Access Events (ASI1201E)
 
@@ -307,12 +312,11 @@ The callback copies the event fields and enqueues them. A background persistence
 
 The list endpoint returns newest-first events and is intended for dashboard/history integration. This repository package is the FastAPI backend; it does not include a separate web frontend.
 
-### Network interfaces
+### Interface discovery
 
-- `GET /api/network/interfaces` lists active Ethernet/LAN IPv4 adapters with MAC information.
 - `GET /device-initialization/interfaces` returns the Ethernet IPv4 addresses that LAN discovery uses by default. An explicit `local_ip` supplied to the discovery endpoint is still honored.
 
-The adapter filter is based on interface names containing `Ethernet`, `eth`, or `LAN`. Rename a Windows adapter to an Ethernet/LAN-style name if it is not detected by this filter.
+The standalone `GET /api/network/interfaces` route is disabled in version 1.1.5. The device-initialization interface endpoint is the supported operation for the setup wizard.
 
 ## Live device status for the Next.js dashboard
 
@@ -377,3 +381,339 @@ The actual status payload includes device identity, name, host/port, monitoring 
 ### Monitoring semantics and deployment notes
 
 `online` means the configured TCP port is reachable and this backend process holds a NetSDK login session. This is an application health check, not a controller-originated heartbeat. Status detection can take roughly two monitor intervals after a sudden network loss (default: around 20 seconds), plus the TCP timeout. The monitor is single-process and must run with one Uvicorn worker because SDK login handles are process-local. Do not run multiple API replicas with independent monitors against the same devices. The current API has no authentication layer; keep it on a trusted LAN/VPN until authentication and authorization are added before public exposure.
+
+---
+
+# Legacy direct station-card workflow (USER / STAFF)
+
+This section documents the earlier direct station-card workflow for backward compatibility. New registrations should use the station-user flow in the section **Station users, operational roles, and RFID card assignment** below. The older person-based REST routes are disabled in version 1.1.5; this section is retained as historical documentation for the earlier direct station-card model.
+
+## Important data ownership rule
+
+The application database is the system of record. Dahua controller records are only the local working copy needed to make access decisions at the door. A controller reset must not delete stations, cards, roles, rates, access-event history or cash-collection records from the application database.
+
+For a central deployment, configure PostgreSQL using `DATABASE_URL` and set a persistent `DEVICE_ENCRYPTION_KEY` generated once with Fernet. The same key must be supplied securely to every API process/worker that needs to decrypt device passwords. Do not rotate or regenerate this key casually; encrypted device credentials cannot be decrypted with a different key. Keep `.env`, the real local `data/device_secret.key`, and the SQLite database out of source archives and source control.
+
+## Station-first setup workflow
+
+1. Register a controller using the existing `POST /devices` route.
+2. Create a station using `POST /stations`:
+
+```json
+{
+  "station_code": "ST-001",
+  "name": "Station 001",
+  "city": "Karachi"
+}
+```
+
+3. Associate the controller with the station using `POST /stations/{station_id}/devices/{device_id}`.
+4. Add a billable customer card using `POST /stations/{station_id}/cards`:
+
+```json
+{
+  "device_id": 1,
+  "card_number": "FB66983B",
+  "role": "USER",
+  "card_name": "Customer washroom card",
+  "is_valid": true,
+  "valid_from": "2026-11-13",
+  "valid_until": "2037-12-31",
+  "door_indices": [0],
+  "time_section_indices": [0]
+}
+```
+
+5. Add the staff card the same way with `"role": "STAFF"`. `USER` defaults to billable and `STAFF` defaults to non-billable. The event processor charges only successful `ENTRY` events for active, valid, billable `USER` assignments.
+6. Configure the USER per-entry rate using `POST /stations/{station_id}/rates`:
+
+```json
+{
+  "role": "USER",
+  "rate_per_use": "20.00",
+  "currency": "PKR",
+  "effective_from": "2026-11-13"
+}
+```
+
+The amount above is an example only. Rate periods for the same station and role cannot overlap. Each qualifying event snapshots the effective rate so later rate changes do not rewrite historical charges.
+7. Record actual cash received using `POST /stations/{station_id}/cash-collections`:
+
+```json
+{
+  "period_start": "2026-11-13",
+  "period_end": "2026-11-13",
+  "amount": "2500.00",
+  "currency": "PKR",
+  "received_by": "Station cashier",
+  "reference": "RECEIPT-001"
+}
+```
+
+### Convert an existing person-based card without deleting it
+
+If a physical card was already enrolled through the older `/persons` workflow, do **not** post it again to `/stations/{station_id}/cards`; that endpoint correctly rejects a duplicate card number. Use `POST /stations/{station_id}/cards/adopt-existing` instead. This creates the station role assignment from the existing cloud `AccessCard` row, keeps the original Person and AccessCard records intact, and does not make a hardware call.
+
+Example for an existing customer card:
+
+```json
+{
+  "device_id": 1,
+  "card_number": "FB66983B",
+  "role": "USER",
+  "card_name": "Customer Card 01",
+  "is_billable": true
+}
+```
+
+For a real staff RFID card, use its actual UID with `"role": "STAFF"` and `"is_billable": false`. Adopt only cards that physically exist; do not convert placeholder/test card numbers just because they appear in the old database. Adoption intentionally sets `device_record_no` to null and the station assignment to `needs_reprovisioning`, because native record numbers from before a factory reset cannot be trusted.
+
+After adopting the required cards, restore them to a controller that has been physically confirmed factory-reset using `POST /devices/{device_id}/reprovision`:
+
+```json
+{
+  "confirmation": "REPROVISION_FROM_CLOUD",
+  "controller_confirmed_factory_reset": true
+}
+```
+
+This confirmation bypasses the SDK inventory preflight; use it only when the controller is known to be empty. The endpoint inserts the station assignments and attempts a readback. On ASI1201E firmware where `FindRecord` is unsupported, the response may be `verification_required`; in that case check the restored cards in SmartPSS and physically scan each card before treating the controller as recovered. The backend will not label those records `synced` solely because an insert call returned success.
+
+Do not repeat the confirmed restore request after it has started. The API blocks a second confirmed attempt to avoid duplicate hardware inserts when the controller's inventory API cannot be queried. If the restore returns `verification_required`, and you have checked **every** expected card in SmartPSS and tested access with each physical card, call `POST /devices/{device_id}/reprovision/manual-verification`:
+
+```json
+{
+  "confirmation": "I_VERIFIED_EACH_CARD_IN_SMARTPSS_AND_TESTED_ACCESS",
+  "verified_card_numbers": ["FB66983B"]
+}
+```
+
+The list must exactly match the station-card assignments for that controller. This records that the administrator completed manual verification; it does not claim that the unsupported SDK inventory readback API works.
+
+## Dashboard and reporting
+
+- `GET /dashboard-ui` — local read-only dashboard page.
+- `GET /dashboard/summary?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` — scan, role, expected collection, cash and outstanding summary.
+- `GET /dashboard/stations` — station-by-station device/card/usage overview.
+- `GET /reports/usage?group_by=day|week|month|year` — grouped usage report.
+- `GET /reports/card-usage` — per-card scan and billable-entry summary.
+- `GET /access-events?station_id=1&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` — detailed event list.
+- `GET /stations/{station_id}/cash-collections` — cash collection history.
+
+The dashboard is a lightweight built-in HTML view served by FastAPI; the uploaded project did not contain a separate React/Next.js frontend. Station/card creation, rate changes and cash entry are currently handled through the APIs in `/docs`.
+
+## Factory-reset and recovery workflow
+
+1. A controller reset does not remove anything from the cloud/application database. If the reset also restores factory credentials or network settings, first reinitialize the controller and update its saved host/username/password in the application. The backend cannot restore cards until the controller is reachable and a valid authenticated SDK session is established.
+2. Run `POST /devices/{device_id}/inventory-check` after reconnecting. A successful inventory comparison may report missing cloud cards and create a pending reprovision job.
+3. If the controller was physically factory-reset and the SDK inventory API cannot read its card records, an administrator may explicitly confirm that fact by calling `POST /devices/{device_id}/reprovision` with:
+
+```json
+{
+  "confirmation": "REPROVISION_FROM_CLOUD",
+  "controller_confirmed_factory_reset": true
+}
+```
+
+4. The backend writes the cloud card assignments back to the controller and attempts a readback verification. It does not delete unexpected controller cards automatically.
+5. If the SDK readback is unsupported or fails, the device is marked `verification_required`/`unknown` and card assignments are not falsely reported as fully synchronized. Verify the result using a supported Dahua management tool or firmware-specific method before declaring recovery complete.
+
+**Never run the confirmed-factory-reset reprovision action unless an administrator has physically verified that this controller was reset and is intended to be restored from the cloud inventory.**
+
+## Reporting and accounting rules
+
+- Default billable unit: one successful `ENTRY` event on an active, valid `USER` card.
+- `STAFF` card events are recorded but non-billable by default.
+- Denied scans and non-entry events are not charged.
+- The applied rate is captured on the event at the time it is persisted.
+- The rule currently treats every separate successful USER `ENTRY` callback as a billable use. A visit/session cooldown or duplicate-tap suppression policy has not been added; decide that business rule and test actual ASI1201E callback behavior before invoicing automatically.
+- In the observed ASI1201E event messages, the native `event_id` was `0` and `sequence` was `null`. The backend deduplicates only when a stable native event identifier exists; where it does not, it cannot promise exactly-once event accounting. Validate the device callback delivery pattern and add a durable event-id/outbox strategy before using reports as the sole financial ledger.
+- Expected collection is calculated from those billable event snapshots.
+- Cash collection records separately store the usage period being settled and the date cash was physically received. The summary distinguishes `actual_cash_collected` (allocated to the selected usage period) from `cash_received_during_report_period` (received inside the selected dates).
+- Existing access events recorded before station/card-role assignments have no role/rate snapshot and are not retroactively billed. Existing person-based cards are not automatically converted because their USER/STAFF role cannot be safely inferred; create/review their station assignments explicitly.
+
+## Deployment and hardware limitations — read before production
+
+- The supplied NetSDK wheel and native SDK are Windows x64. Device SDK calls must currently run on a supported Windows host where the controllers are reachable over the network. A single cloud VPS generally cannot directly reach controllers behind 100 separate station LANs unless you provide a VPN/site-to-site network or a secure outbound Windows site-agent architecture.
+- This release provides station-aware data structures, APIs, reports, explicit inventory checks and an administrator-confirmed reprovision path. It does **not** yet implement autonomous factory-reset detection. A reset is discovered by inventory comparison or an administrator report; automatic physical reset detection is model/firmware dependent.
+- The access-event persistence queue is in-process. It is suitable for development/single-process testing, not a guarantee of zero event loss across process restarts or network outages. Production deployment needs a durable edge outbox/message queue and retry/acknowledgement flow.
+- No application user authentication/role authorization has been added in this release. Keep the API and `/dashboard-ui` on a private LAN/VPN; do not expose it to the public internet. Add authenticated administrators, least-privilege station operators, TLS, audit trails and secret-manager integration before a live 100-station rollout.
+- The ASI1201E has previously returned `FindRecord failed: The device does not support current operation` in this installation. The code deliberately treats that as unknown inventory, not an empty device. Physical card insert/freeze/reprovision/readback must be tested on the actual controller and firmware before relying on it operationally.
+- Do not run multiple Uvicorn workers that each initialize their own NetSDK sessions against the same devices. Use a dedicated device worker/agent architecture for a distributed rollout.
+
+## Upgrade safety
+
+Back up your existing `data/dahua_access.db` and `data/device_secret.key` before replacing source files. This package excludes local runtime databases and encryption keys. Keep your existing files in place; do not overwrite them with the package's empty `data` folder. The added startup migration is additive and is intended to preserve the existing person/card data. Test the upgrade against a backup first.
+
+---
+
+## Station users, operational roles, and RFID card assignment
+
+This update introduces the station operational-user workflow. It is separate from software/dashboard accounts: a `StationUser` is a named person or label at a physical station and does not log in to the application.
+
+### Operational roles
+
+The application seeds four predefined, global operational roles at startup:
+
+| Code | Display name | Default billable |
+|---|---|---:|
+| `MANAGER` | Manager | No |
+| `ADMIN` | Admin | No |
+| `STAFF` | Staff | No |
+| `CUSTOMER` | Customer | Yes |
+
+A station can also create custom operational roles. Built-in roles cannot be edited or deactivated. Custom roles are station-scoped and can be deactivated without deleting historical users/events. `is_billable` can be overridden per station user; when the override is `null`, the role's `default_is_billable` is used.
+
+These are RFID/operational classifications, not dashboard permission roles. Role-specific Dahua access profiles are not automated in this phase: the physical card still receives explicit door and time-section indexes during enrollment.
+
+### Recommended setup sequence in Swagger
+
+1. Check the local network interfaces: `GET /device-initialization/interfaces`.
+2. If the controller is factory-new and uninitialized, discover it with `POST /device-initialization/discover`, then initialize it with `POST /device-initialization/initialize`. Do not initialize an already initialized controller.
+3. Register the controller with `POST /devices`. Set `connect_now: true` to attempt connection immediately. For an already registered controller, use `POST /devices/{device_id}/connect`.
+4. Assign the registered controller to its station with `POST /stations/{station_id}/devices/{device_id}`.
+5. Load available roles using `GET /stations/{station_id}/roles`.
+6. Create a named station user using `POST /stations/{station_id}/users` and a role ID returned by the roles endpoint.
+7. Start a card scan using `POST /stations/{station_id}/users/{user_id}/card-enrollments` with `device_id` and optional `timeout_seconds`.
+8. Present the RFID card to the Dahua reader. Poll `GET /stations/{station_id}/users/{user_id}/card-enrollments/{session_token}` until its status is `captured`.
+9. Confirm the captured card using `POST /stations/{station_id}/users/{user_id}/card-enrollments/{session_token}/confirm`. The UID comes from the scan event; it is not supplied by the caller.
+10. Review the result at `GET /stations/{station_id}/users/{user_id}` or `GET /stations/{station_id}/cards`.
+
+### New endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/stations/{station_id}/roles` | List predefined and station custom roles |
+| POST | `/stations/{station_id}/roles` | Create a custom operational role |
+| PATCH | `/stations/{station_id}/roles/{role_id}` | Update a station custom role |
+| DELETE | `/stations/{station_id}/roles/{role_id}` | Deactivate a station custom role |
+| POST | `/stations/{station_id}/users` | Create a named station user with a role |
+| GET | `/stations/{station_id}/users` | List station users and their active cards |
+| GET | `/stations/{station_id}/users/{user_id}` | Get one station user and active card |
+| PATCH | `/stations/{station_id}/users/{user_id}` | Update name, phone, role, billing override, or active status |
+| POST | `/stations/{station_id}/users/{user_id}/cards/adopt` | Link an existing station-card record without re-enrolling it |
+| POST | `/stations/{station_id}/users/{user_id}/card-enrollments` | Start a Dahua RFID scan for a specific user |
+| GET | `/stations/{station_id}/users/{user_id}/card-enrollments/{session_token}` | Read the user-bound scan session |
+| POST | `/stations/{station_id}/users/{user_id}/card-enrollments/{session_token}/confirm` | Register the captured card and assign it to the user |
+| GET | `/stations/{station_id}/users/{user_id}/card-history` | List current and historical card assignments |
+| DELETE | `/stations/{station_id}/users/{user_id}/card` | Revoke/deactivate the active card on the controller and close the assignment |
+
+A station user may have only one active card assignment. A physical station-card record may have only one active user assignment. The `user_card_assignments` table preserves previous assignments when cards are replaced or reassigned. The station's existing `/cards` endpoint now includes the linked user's name and operational role when a current user-card link exists.
+
+### Example requests
+
+List roles:
+
+```json
+GET /stations/1/roles
+```
+
+Create a custom role:
+
+```json
+{
+  "name": "Cleaning Team",
+  "description": "Washroom cleaning personnel",
+  "default_is_billable": false
+}
+```
+
+Create a station user (use a real `role_id` from the roles response):
+
+```json
+{
+  "name": "Ahmed",
+  "phone": "03001234567",
+  "role_id": 4,
+  "is_billable": null
+}
+```
+
+Start card enrollment:
+
+```json
+{
+  "device_id": 1,
+  "timeout_seconds": 90
+}
+```
+
+Confirm the captured scan:
+
+```json
+{
+  "card_name": "Ahmed",
+  "card_type": "general",
+  "is_valid": true,
+  "valid_from": "2026-11-14",
+  "valid_until": "2037-12-31",
+  "door_indices": [0],
+  "time_section_indices": [0]
+}
+```
+
+### Data model and compatibility
+
+- `operational_roles`: predefined global roles and station custom roles.
+- `station_users`: station name/label, selected operational role, contact, and optional billable override.
+- `user_card_assignments`: historical user-to-station-card links, with a partial unique index enforcing one active card per user and one active user per card record.
+- Existing `station_card_assignments` remains the controller-card inventory record for backward compatibility.
+- The older `/persons` and `/devices/{device_id}/card-enrollments` REST workflow is disabled in version 1.1.5. New station registrations must use the `/stations/{station_id}/users` endpoints above.
+- Existing station-card records can be linked to a newly created station user with the `/cards/adopt` endpoint. This does not change the controller. It marks that assignment and the device inventory as requiring verification; it does not assume that an old `synced` flag proves the controller still contains the card.
+- New card registration is marked `pending_verification` after insertion. Do not treat a successful SDK insert call by itself as a verified readback.
+
+### Access-event and billing behavior
+
+Incoming events resolve the active card assignment to the station user and current operational role. The event stores a snapshot of the user ID, user name and role code. A charge is considered only for a qualifying `granted` `ENTRY` event when the station/card/user are active and the effective user billing flag is true. Denied scans remain in event history and are not billable.
+
+For compatibility, the current rate table still uses the existing `USER` and `STAFF` pricing buckets: billable operational roles use the `USER` rate bucket; non-billable roles do not create usage charges. Role-specific price schedules are a separate future enhancement.
+
+### Database upgrade and backup
+
+On application startup, new tables are created and the two station-user snapshot columns are added to the existing `access_events` table if missing. The four predefined operational roles are seeded idempotently. Existing station/device/card/event records are not deleted or replaced.
+
+Before applying an update to an existing installation, stop the API and back up:
+
+- `data/dahua_access.db`
+- `data/device_secret.key`
+
+Do not replace the `.env`, `.venv`, live database, or encryption key when copying updated source files. The database and its encryption key must be kept together.
+
+### Verification performed for this update
+
+Run the offline smoke test from the project root with `pip install -r requirements-test.txt` followed by `python tests/smoke_station_user_workflow.py`. It uses a temporary SQLite database and mocked Dahua insert/update calls; it does not connect to the physical controller or touch the installation database.
+
+The development verification suite exercised role seeding/listing, custom role create/update protections, station-user creation, user-bound card enrollment, confirmation with a mocked Dahua card-insert operation, one-active-card enforcement, card/user read APIs, and access-event resolution to a custom role. A copy of the SQLite database bundled in the supplied project archive was upgraded; Station 1, Device 1, card `FB66983B`, and 27 historical access events were preserved. The Dahua hardware itself was not connected or exercised by these offline tests. Perform one controlled physical card enrollment and access test before using the new workflow operationally.
+
+
+## Controller-only card record deletion (advanced)
+
+Use this endpoint only when a physical Dahua card record remains on the controller but its application assignment has already been removed:
+
+`DELETE /devices/{device_id}/cards/device-records/{record_number}`
+
+Request body example for the verified device record `16872` / card UID `000041E8`:
+
+```json
+{
+  "card_number": "000041E8",
+  "confirmation": "DELETE_CONTROLLER_CARD:16872:000041E8"
+}
+```
+
+The endpoint connects to the controller, reads the card list, verifies the exact record number and card UID, and then removes that controller card record. It refuses deletion if a matching cloud-side station or legacy card assignment still exists. It does not delete application assignments or access-event history. After success, device inventory is set to `unknown`; run a fresh inventory check before enrolling cards. This operation is irreversible on the controller and should be used only after confirming the record identity.
+
+## Next.js frontend API handoff
+
+The current frontend integration scope, endpoint groups, device initialization sequence, WebSocket status messages, station-user/RFID workflow, and legacy APIs to avoid are documented in `docs/NEXTJS_FRONTEND_API_HANDOFF.md`. This guide reflects the current 1.1.5 mounted backend routes.
+
+
+
+## Station-user card reactivation
+
+To reactivate an existing card assignment for its previous station user, use `POST /stations/{station_id}/users/{user_id}/cards/{assignment_id}/activate`. This preserves the old inactive history row and creates a new active link. Run controller inventory verification afterwards. The endpoint does not extend an expired card's validity or alter its door/time-section permissions. See `docs/NEXTJS_FRONTEND_API_HANDOFF.md`.
+
+
+## API surface note (v1.1.5)
+
+The legacy People and IC Cards router and standalone Network router are intentionally not mounted. The supported device initialization interface API remains `/device-initialization/interfaces`. Legacy model and migration code is retained for compatibility with existing databases.

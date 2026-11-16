@@ -21,6 +21,8 @@ class EnrollmentSession:
     card_number: str | None = None
     captured_at: datetime | None = None
     event_payload: dict[str, Any] = field(default_factory=dict)
+    station_id: int | None = None
+    station_user_id: int | None = None
 
 
 class CardEnrollmentService:
@@ -45,6 +47,8 @@ class CardEnrollmentService:
         return {
             "session_token": item.token,
             "device_id": item.device_id,
+            "station_id": item.station_id,
+            "station_user_id": item.station_user_id,
             "status": item.status,
             "card_number": item.card_number,
             "created_at": item.created_at.isoformat(),
@@ -97,6 +101,49 @@ class CardEnrollmentService:
             self._active_by_device[device_id] = token
             return self._serialize(item)
 
+    def begin_for_user(self, device_id: int, station_id: int, station_user_id: int, timeout_seconds: int = 90) -> dict[str, Any]:
+        """Start an enrollment session cryptographically random and bound to one station user."""
+        result = self.begin(device_id, timeout_seconds)
+        with self._lock:
+            item = self._sessions[result["session_token"]]
+            item.station_id = int(station_id)
+            item.station_user_id = int(station_user_id)
+            return self._serialize(item)
+
+    def get_for_station_user(self, token: str) -> dict[str, Any] | None:
+        with self._lock:
+            item = self._sessions.get(str(token))
+            if item is None or item.station_user_id is None:
+                return None
+            self._refresh_expiry(item)
+            return self._serialize(item)
+
+    def claim_for_confirmation_for_user(self, token: str, station_id: int, station_user_id: int) -> EnrollmentSession:
+        with self._lock:
+            item = self._sessions.get(str(token))
+            if item is None or item.station_id != int(station_id) or item.station_user_id != int(station_user_id):
+                raise CardEnrollmentError("Card enrollment session does not belong to this station user.")
+            self._refresh_expiry(item)
+            if item.status != "captured" or not item.card_number:
+                raise CardEnrollmentError(f"Card cannot be confirmed while enrollment status is '{item.status}'.")
+            item.status = "confirming"
+            return item
+
+    def confirmation_failed_for_user(self, token: str) -> None:
+        with self._lock:
+            item = self._sessions.get(str(token))
+            if item and item.station_user_id is not None and item.status == "confirming":
+                item.status = "captured"
+
+    def confirmation_succeeded_for_user(self, token: str) -> dict[str, Any] | None:
+        with self._lock:
+            item = self._sessions.get(str(token))
+            if item is None or item.station_user_id is None:
+                return None
+            item.status = "confirmed"
+            self._active_by_device.pop(item.device_id, None)
+            return self._serialize(item)
+
     def observe_event(self, device_id: int, payload: dict[str, Any]) -> bool:
         """Capture the first event containing a card UID for this device."""
         card_number = str(payload.get("card_number") or "").strip().upper()
@@ -127,7 +174,7 @@ class CardEnrollmentService:
     def get(self, device_id: int, token: str) -> dict[str, Any] | None:
         with self._lock:
             item = self._sessions.get(str(token))
-            if item is None or item.device_id != int(device_id):
+            if item is None or item.device_id != int(device_id) or item.station_user_id is not None:
                 return None
             self._refresh_expiry(item)
             return self._serialize(item)
@@ -135,8 +182,8 @@ class CardEnrollmentService:
     def claim_for_confirmation(self, device_id: int, token: str) -> EnrollmentSession:
         with self._lock:
             item = self._sessions.get(str(token))
-            if item is None or item.device_id != int(device_id):
-                raise CardEnrollmentError("Card enrollment session was not found.")
+            if item is None or item.device_id != int(device_id) or item.station_user_id is not None:
+                raise CardEnrollmentError("Card enrollment session was not found or belongs to the station-user enrollment flow.")
             self._refresh_expiry(item)
             if item.status != "captured" or not item.card_number:
                 raise CardEnrollmentError(
@@ -163,7 +210,7 @@ class CardEnrollmentService:
     def cancel(self, device_id: int, token: str) -> dict[str, Any] | None:
         with self._lock:
             item = self._sessions.get(str(token))
-            if item is None or item.device_id != int(device_id):
+            if item is None or item.device_id != int(device_id) or item.station_user_id is not None:
                 return None
             if item.status == "confirming":
                 raise CardEnrollmentError("Cannot cancel while card registration is in progress.")

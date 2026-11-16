@@ -210,7 +210,11 @@ class DahuaAccessCardService:
         record.szCardName = encoded_name
         # This legacy controller record's szUserID is documented as unsupported
         # on some devices. Keep person_code in the central database.
-        record.emStatus = int(api["CardState"].NET_ACCESSCTLCARD_STATE_NORMAL)
+        record.emStatus = int(
+            api["CardState"].NET_ACCESSCTLCARD_STATE_NORMAL
+            if is_valid
+            else api["CardState"].NET_ACCESSCTLCARD_STATE_FREEZE
+        )
         type_map = {
             0: api["CardType"].NET_ACCESSCTLCARD_TYPE_GENERAL,
             1: api["CardType"].NET_ACCESSCTLCARD_TYPE_VIP,
@@ -627,13 +631,15 @@ class DahuaAccessCardService:
     def add_device_card(self, device_id: int, *, card_number: str, card_name: str,
                         card_type: int, is_valid: bool, valid_from: date,
                         valid_until: date, door_indices: list[int],
-                        time_section_indices: list[int]) -> int:
+                        time_section_indices: list[int],
+                        skip_duplicate_check: bool = False) -> int:
         from ctypes import cast, c_void_p, pointer, sizeof
         api = self._imports()
         handle = self._session_handle(device_id)
-        duplicate = self.list_device_cards(device_id, card_number=card_number)
-        if duplicate:
-            raise AccessCardSDKError(f"Card {card_number} already exists on the controller.")
+        if not skip_duplicate_check:
+            duplicate = self.list_device_cards(device_id, card_number=card_number)
+            if duplicate:
+                raise AccessCardSDKError(f"Card {card_number} already exists on the controller.")
         record = self._make_record(
             api, card_number=card_number, card_name=card_name, card_type=card_type,
             is_valid=is_valid, valid_from=valid_from, valid_until=valid_until,
@@ -670,7 +676,7 @@ class DahuaAccessCardService:
             if any(int(item["record_number"]) != int(record_number) for item in duplicate_rows):
                 raise AccessCardSDKError(f"Card {target_number} already exists on the controller.")
 
-        current_rows = self._find_native_records(device_id, original_number)
+        current_rows = self._find_native_records(device_id, original_number, int(record_number))
         if not current_rows:
             raise AccessCardSDKError(
                 f"Could not reload native card record {record_number} for card {original_number}."
@@ -687,7 +693,11 @@ class DahuaAccessCardService:
             raise AccessCardSDKError("card_name must fit within 63 UTF-8 bytes for the controller record.")
         record.szCardNo = target_number.encode("ascii")
         record.szCardName = encoded_name
-        record.emStatus = int(api["CardState"].NET_ACCESSCTLCARD_STATE_NORMAL)
+        record.emStatus = int(
+            api["CardState"].NET_ACCESSCTLCARD_STATE_NORMAL
+            if is_valid
+            else api["CardState"].NET_ACCESSCTLCARD_STATE_FREEZE
+        )
         record.emType = int({
             0: api["CardType"].NET_ACCESSCTLCARD_TYPE_GENERAL,
             1: api["CardType"].NET_ACCESSCTLCARD_TYPE_VIP,
@@ -716,21 +726,25 @@ class DahuaAccessCardService:
         # Keep a local reference to the source allocation for the full native call.
         _ = record_buffer
 
-    def _find_native_records(self, device_id: int, card_number: str):
+    def _find_native_records(self, device_id: int, card_number: str, record_number: int):
+        """Find a native card record using the controller's unfiltered inventory query.
+
+        Some ASI1201E firmware accepts the unfiltered ACCESSCTLCARD FindRecord
+        query used by list_device_cards(), but rejects a FindCondition with
+        abCardNo=True. Enumerate the supported inventory query and match the
+        immutable controller record number and card UID locally instead.
+        """
         from ctypes import cast, c_void_p, pointer, sizeof, POINTER
         api = self._imports()
         handle = self._session_handle(device_id)
         condition = api["FindCondition"]()
         condition.dwSize = sizeof(api["FindCondition"])
-        condition.szCardNo = card_number.upper().encode("ascii")
-        condition.abCardNo = True
+
         find_in = api["FindIn"]()
         find_in.dwSize = sizeof(api["FindIn"])
         find_in.emType = int(api["RecordType"].ACCESSCTLCARD)
         find_in.pQueryCondition = cast(pointer(condition), c_void_p)
         find_out = api["FindOut"]()
-        # Required by the SDK. list_device_cards() already initialized this;
-        # the missing assignment here caused FindRecord to reject card updates.
         find_out.dwSize = sizeof(api["FindOut"])
 
         client = self._device_sdk._client
@@ -738,29 +752,45 @@ class DahuaAccessCardService:
             raise AccessCardSDKError(f"Dahua FindRecord failed: {client.GetLastErrorMessage()}")
         find_handle = int(getattr(find_out.lFindeHandle, "value", find_out.lFindeHandle))
         found = []
-        # Keep `buff` alive alongside each returned structure until the caller
-        # finishes the update operation.
+        target_number = card_number.strip().upper()
+        target_record_number = int(record_number)
         try:
-            size = 10
-            ni = api["FindNextIn"]()
-            ni.dwSize = sizeof(api["FindNextIn"])
-            ni.lFindeHandle = find_handle
-            ni.nFileCount = size
-            no = api["FindNextOut"]()
-            no.dwSize = sizeof(api["FindNextOut"])
-            no.nMaxRecordNum = size
-            buff = (api["CardRecord"] * size)()
-            for item in buff:
-                item.dwSize = sizeof(api["CardRecord"])
-            no.pRecordList = cast(buff, c_void_p)
-            if not client.FindNextRecord(ni, no, 5000):
-                raise AccessCardSDKError(f"Dahua FindNextRecord failed: {client.GetLastErrorMessage()}")
-            count = int(no.nRetRecordNum)
-            if count < 0 or count > size:
-                raise AccessCardSDKError(f"Dahua returned an invalid card record count: {count}")
-            rows = cast(no.pRecordList, POINTER(api["CardRecord"] * size)).contents
-            for index in range(count):
-                found.append((rows[index], buff))
+            batch_size = 20
+            while True:
+                find_next_in = api["FindNextIn"]()
+                find_next_in.dwSize = sizeof(api["FindNextIn"])
+                find_next_in.lFindeHandle = find_handle
+                find_next_in.nFileCount = batch_size
+
+                find_next_out = api["FindNextOut"]()
+                find_next_out.dwSize = sizeof(api["FindNextOut"])
+                find_next_out.nMaxRecordNum = batch_size
+                buffer = (api["CardRecord"] * batch_size)()
+                for item in buffer:
+                    item.dwSize = sizeof(api["CardRecord"])
+                find_next_out.pRecordList = cast(buffer, c_void_p)
+
+                if not client.FindNextRecord(find_next_in, find_next_out, 5000):
+                    raise AccessCardSDKError(f"Dahua FindNextRecord failed: {client.GetLastErrorMessage()}")
+                count = int(find_next_out.nRetRecordNum)
+                if count < 0 or count > batch_size:
+                    raise AccessCardSDKError(f"Dahua returned an invalid card record count: {count}")
+                rows = cast(
+                    find_next_out.pRecordList,
+                    POINTER(api["CardRecord"] * batch_size),
+                ).contents
+                for index in range(count):
+                    row = rows[index]
+                    if int(row.nRecNo) == target_record_number:
+                        actual_number = _decode(row.szCardNo).strip().upper()
+                        if actual_number != target_number:
+                            raise AccessCardSDKError(
+                                "The controller record number belongs to a different card; update cancelled."
+                            )
+                        # Keep the native buffer alive until ControlDevice(RECORDSET_UPDATE) returns.
+                        found.append((row, buffer))
+                if count < batch_size:
+                    break
         finally:
             client.FindRecordClose(find_handle)
         return found

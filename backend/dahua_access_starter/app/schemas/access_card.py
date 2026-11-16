@@ -179,3 +179,14 @@ class DeviceCardRecordRead(BaseModel):
     worker_type_name: str | None = None
     person_profile: DevicePersonProfileRead | None = None
     person_profile_error: str | None = None
+
+
+class DeviceCardRecordDeleteRequest(BaseModel):
+    """Explicit confirmation for deleting one physical Dahua card record."""
+    card_number: str = Field(min_length=4, max_length=32, pattern=r"^(?:[0-9A-Fa-f]{2}){2,16}$")
+    confirmation: str = Field(min_length=10, max_length=100)
+
+    @field_validator("card_number")
+    @classmethod
+    def normalize_device_card_number(cls, value: str) -> str:
+        return value.strip().upper()
