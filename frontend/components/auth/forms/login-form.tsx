@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, Loader2 } from "lucide-react";
@@ -8,8 +8,17 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/auth/forms/password-input";
+import { findAccountByEmail } from "@/lib/accounts";
+import {
+  ROLE_META,
+  defaultUser,
+  roleFromPassword,
+  setRoleCookie,
+  setUserCookie,
+  type Role,
+} from "@/lib/roles";
 
-// shortcut: mock sign-in — replace with the real session endpoint
+// shortcut: mock sign-in — the password text selects the demo role
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
@@ -22,14 +31,41 @@ function LoginForm() {
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accountRole, setAccountRole] = useState<Role | null>(null);
+
+  // Read the managed account list after hydration; SSR has no localStorage.
+  useEffect(() => {
+    if (!email.includes("@")) {
+      setAccountRole(null);
+      return;
+    }
+    setAccountRole(findAccountByEmail(email)?.role ?? null);
+  }, [email]);
+
+  const detectedRole =
+    accountRole ??
+    (password.trim().length >= 5 ? roleFromPassword(password) : null);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.includes("@") || password.length < 6) {
-      setError("Enter a valid email and a password of at least 6 characters.");
+    if (!email.includes("@") || password.trim().length < 5) {
+      setError("Enter a valid email and a password of at least 5 characters.");
+      return;
+    }
+    const account = findAccountByEmail(email);
+    if (account && account.password !== password) {
+      setError("Incorrect password for this account.");
       return;
     }
     setError(null);
+    if (account) {
+      setRoleCookie(account.role);
+      setUserCookie({ name: account.name, email: account.email });
+    } else {
+      const role = roleFromPassword(password);
+      setRoleCookie(role);
+      setUserCookie(defaultUser(role, email.trim()));
+    }
     setLoading(true);
     setTimeout(() => router.push("/overview"), 700);
   };
@@ -71,6 +107,15 @@ function LoginForm() {
           />
         </label>
 
+        {detectedRole ? (
+          <p className="text-xs text-muted-foreground">
+            Signing in as{" "}
+            <span className="font-medium text-foreground">
+              {ROLE_META[detectedRole].label}
+            </span>
+          </p>
+        ) : null}
+
         <div className="flex items-center justify-between text-xs">
           <label className="inline-flex cursor-pointer items-center gap-2 text-muted-foreground">
             <input
@@ -101,7 +146,10 @@ function LoginForm() {
       </form>
 
       <p className="text-xs text-muted-foreground">
-        Demo build — any valid-looking credentials sign in.
+        Demo roles — password <span className="font-mono">super admin</span>,{" "}
+        <span className="font-mono">admin</span> or{" "}
+        <span className="font-mono">branch</span>. Accounts created by the Super
+        Admin sign in with their own email and password.
       </p>
       <p className="text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}

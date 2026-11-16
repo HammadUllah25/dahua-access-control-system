@@ -36,6 +36,8 @@ import { AccessRhythm } from "@/components/overview/access-rhythm";
 import { DenialReasons } from "@/components/overview/denial-reasons";
 import { StationMap } from "@/components/overview/station-map";
 import { Led } from "@/common/led";
+import { useSession } from "@/components/role-provider";
+import { ROLE_META, roleScopeLabel, stationsForRole } from "@/lib/roles";
 import {
   Table,
   TableBody,
@@ -49,7 +51,6 @@ import {
   ALERTS,
   DEVICE,
   PEOPLE,
-  STATION,
   dailySeries,
   eventsForPrevRange,
   eventsForRange,
@@ -67,6 +68,12 @@ const RED = "var(--led-red)";
 const ACCENT = "var(--chart-1)";
 
 function OverviewView() {
+  const { role } = useSession();
+  const meta = ROLE_META[role];
+  const scopedStations = stationsForRole(role);
+  const onlineStations = scopedStations.filter(
+    (station) => station.status === "online"
+  ).length;
   const [range, setRange] = useState<RangeKey>("7d");
   const events = eventsForRange(ACCESS_EVENTS, range);
   const stats = summarize(events);
@@ -97,13 +104,26 @@ function OverviewView() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">
-            Station command centre
+            {meta.commandCentre}
           </h2>
-          <p className="text-xs text-muted-foreground">
-            {STATION.name} · {STATION.address}
-          </p>
+          <p className="text-xs text-muted-foreground">{roleScopeLabel(role)}</p>
         </div>
         <DateRange value={range} onChange={setRange} />
+      </div>
+
+      {/* role scope banner */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+        <div className="flex items-center gap-2">
+          <ShieldCheck aria-hidden className="size-4 shrink-0 text-primary" />
+          <span className="font-medium">{meta.label} view</span>
+          <span className="text-xs text-muted-foreground">· {meta.scope}</span>
+        </div>
+        <Link
+          href="/stations"
+          className="text-xs font-medium text-primary hover:underline"
+        >
+          Monitor stations · {onlineStations}/{scopedStations.length} online
+        </Link>
       </div>
 
       {/* system status banner */}

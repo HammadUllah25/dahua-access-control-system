@@ -2,21 +2,10 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import {
-  BarChart3,
-  BellRing,
-  CalendarClock,
-  DoorOpen,
-  LayoutDashboard,
-  Plus,
-  Radio,
-  ScrollText,
-  ScanLine,
-  Settings,
-  Users,
-} from "lucide-react"
+import { ScanLine } from "lucide-react"
 
 import { Led } from "@/common/led"
+import { useSession } from "@/components/role-provider"
 import {
   Sidebar,
   SidebarContent,
@@ -29,63 +18,34 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-
-// Blueprint §2: the 9 station-admin pages plus the Add Device setup flow
-const NAV = [
-  {
-    label: "Operations",
-    items: [
-      { title: "Overview", href: "/overview", icon: LayoutDashboard },
-      { title: "Live Monitoring", href: "/live", icon: Radio },
-      { title: "Access Logs", href: "/logs", icon: ScrollText },
-    ],
-  },
-  {
-    label: "People & access",
-    items: [
-      { title: "People & Cards", href: "/people", icon: Users },
-      { title: "Access Schedules", href: "/schedules", icon: CalendarClock },
-    ],
-  },
-  {
-    label: "Station",
-    items: [
-      { title: "Device & Door", href: "/device", icon: DoorOpen },
-      { title: "Add Device", href: "/add-device", icon: Plus },
-      { title: "Alerts & Events", href: "/alerts", icon: BellRing },
-    ],
-  },
-  {
-    label: "Insights",
-    items: [
-      { title: "Reports", href: "/reports", icon: BarChart3 },
-      { title: "Settings", href: "/settings", icon: Settings },
-    ],
-  },
-]
+import { navForRole } from "@/lib/nav"
+import { ROLE_META } from "@/lib/roles"
 
 function AppSidebar() {
   const pathname = usePathname()
+  const { role, hidden, permissions } = useSession()
+  const meta = ROLE_META[role]
+  const nav = navForRole(role, hidden, permissions)
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex items-center gap-2.5 px-1 py-1.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-4.5">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-4">
             <ScanLine aria-hidden />
           </span>
           <div className="grid leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight">
-              PumpStation 04
+              {meta.workspace}
             </span>
             <span className="text-xs text-sidebar-foreground/60">
-              Washroom access · Station Admin
+              {meta.subtitle}
             </span>
           </div>
         </div>
       </SidebarHeader>
       <SidebarContent>
-        {NAV.map((group) => (
+        {nav.map((group) => (
           <SidebarGroup key={group.label}>
             <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -114,7 +74,7 @@ function AppSidebar() {
             Monitoring active
           </div>
           <p className="font-mono text-[0.6875rem] text-sidebar-foreground/50">
-            DHI-ASI1201E · NetSDK 3.060
+            {meta.label} · {meta.scope}
           </p>
         </div>
       </SidebarFooter>
@@ -122,4 +82,4 @@ function AppSidebar() {
   )
 }
 
-export { AppSidebar, NAV }
+export { AppSidebar }

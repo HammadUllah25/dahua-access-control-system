@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/auth/forms/password-input";
+import { roleFromPassword, setRoleCookie, setUserCookie } from "@/lib/roles";
 
 // shortcut: mock registration — the account + OTP email land with the backend
 function SignupForm() {
@@ -43,10 +44,13 @@ function SignupForm() {
       return;
     }
     setError(null);
+    const role = roleFromPassword(form.password);
+    setRoleCookie(role);
+    setUserCookie({ name: form.name.trim(), email: form.email.trim() });
     setLoading(true);
     setTimeout(() => {
-      // Redirect directly to device onboarding after signup
-      router.push("/onboarding");
+      // Admins onboard devices; branch accounts go straight to monitoring.
+      router.push(role === "branch" ? "/overview" : "/onboarding");
     }, 700);
   };
 
