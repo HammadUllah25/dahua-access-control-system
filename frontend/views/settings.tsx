@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { LogOut, MonitorSmartphone, Plug } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LogOut, MonitorSmartphone, Plug, SlidersHorizontal } from "lucide-react";
 
 import { Panel } from "@/components/dashboard/panel";
 import { ToneBadge } from "@/components/dashboard/badges";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,6 +16,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useSession } from "@/components/role-provider";
+import { customisableModules } from "@/lib/nav";
+import {
+  ROLE_META,
+  clearRoleCookie,
+  clearUserCookie,
+  roleScopeLabel,
+  setHiddenModulesCookie,
+} from "@/lib/roles";
 import { DEVICE, STATION } from "@/lib/station-data";
 
 function Row({
@@ -34,22 +45,70 @@ function Row({
 }
 
 function SettingsView() {
-  const [timezone, setTimezone] = useState("Asia/Dubai (GMT+4)");
+  const router = useRouter();
+  const { role, hidden, user } = useSession();
+  const meta = ROLE_META[role];
+  const [timezone, setTimezone] = useState(STATION.timezone);
   const [dateFormat, setDateFormat] = useState("DD MMM YYYY");
   const [density, setDensity] = useState("Comfortable");
+  const [hiddenModules, setHiddenModules] = useState(hidden);
+  const modules = customisableModules();
+
+  const toggleModule = (href: string) => {
+    const next = hiddenModules.includes(href)
+      ? hiddenModules.filter((item) => item !== href)
+      : [...hiddenModules, href];
+    setHiddenModules(next);
+    setHiddenModulesCookie(next);
+    router.refresh();
+  };
+
+  const resetModules = () => {
+    setHiddenModules([]);
+    setHiddenModulesCookie([]);
+    router.refresh();
+  };
+
+  const signOut = () => {
+    clearRoleCookie();
+    clearUserCookie();
+    router.push("/login");
+  };
 
   return (
     <div className="flex flex-col gap-4 p-4 lg:p-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">Settings</h2>
-        <p className="text-xs text-muted-foreground">
-          Station-level preferences and your own account · managed centrally by the Super Admin
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Settings</h2>
+          <p className="text-xs text-muted-foreground">
+            {meta.label} preferences and your own account · {roleScopeLabel(role)}
+          </p>
+        </div>
+        <Badge variant="outline">{meta.label}</Badge>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
+        {/* role and scope */}
+        <Panel
+          title="Role & scope"
+          description="What this account can monitor and manage"
+        >
+          <dl>
+            <Row label="Role" value={<Badge variant="outline">{meta.label}</Badge>} />
+            <Row label="Scope" value={roleScopeLabel(role)} />
+            <Row label="Access" value={meta.description} />
+          </dl>
+        </Panel>
+
         {/* station profile */}
-        <Panel title="Station profile" description="Read-only — station records are managed by the Super Admin">
+        <Panel
+          title="Station profile"
+          description={
+            role === "superadmin"
+              ? "Read-only — station records are managed centrally"
+              : "Read-only — station records are managed by the Super Admin"
+          }
+        >
           <dl>
             <Row label="Station ID" value={STATION.id} mono />
             <Row label="Name" value={STATION.name} />
@@ -59,10 +118,18 @@ function SettingsView() {
         </Panel>
 
         {/* admin profile */}
-        <Panel title="Admin profile" description="Your station admin account — role elevation is not permitted">
+        <Panel
+          title={`${meta.label} profile`}
+          description={
+            role === "superadmin"
+              ? "Your Super Admin account"
+              : "Your account — role elevation is not permitted"
+          }
+        >
           <dl>
-            <Row label="Name" value={STATION.admin.name} />
-            <Row label="Email" value={STATION.admin.email} mono />
+            <Row label="Name" value={user.name} />
+            <Row label="Email" value={user.email} mono />
+            <Row label="Role" value={<Badge variant="outline">{meta.label}</Badge>} />
           </dl>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <label className="grid gap-1">
@@ -132,7 +199,7 @@ function SettingsView() {
                 <MonitorSmartphone aria-hidden className="size-4 text-muted-foreground" />
                 Chrome on Windows · last active 2 h ago
               </span>
-              <Button variant="outline" size="sm" render={<a />}>
+              <Button variant="outline" size="sm" onClick={signOut}>
                 <LogOut aria-hidden />
                 Sign out
               </Button>
@@ -140,6 +207,51 @@ function SettingsView() {
           </div>
         </Panel>
       </div>
+
+      {/* super-admin module customisation */}
+      {role === "superadmin" ? (
+        <Panel
+          title="Dashboard customization"
+          description="Choose which modules appear for every role. Overview, Stations, Access Logs, Device & Door, Settings and Users & Roles always stay visible."
+          action={
+            <SlidersHorizontal aria-hidden className="size-4 text-muted-foreground" />
+          }
+        >
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {modules.map((item) => {
+              const visible = !hiddenModules.includes(item.href);
+              return (
+                <label
+                  key={item.href}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={visible}
+                    onChange={() => toggleModule(item.href)}
+                    className="size-4 accent-[var(--primary)]"
+                  />
+                  <item.icon aria-hidden className="size-4 text-muted-foreground" />
+                  <span>{item.title}</span>
+                </label>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              Applies to every role in this workspace. {hiddenModules.length} module(s) hidden.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={resetModules}
+              disabled={hiddenModules.length === 0}
+            >
+              Reset modules
+            </Button>
+          </div>
+        </Panel>
+      ) : null}
 
       {/* integration information */}
       <Panel

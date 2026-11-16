@@ -15,6 +15,27 @@ export const STATION = {
   admin: { name: "A. Rahman", email: "a.rahman@fuelco.example" },
 };
 
+// Mock network hierarchy for the role-based views. Super Admin sees every row,
+// Admin sees Area A, Branch sees Branch 04.
+export type NetworkStation = {
+  id: string;
+  name: string;
+  area: string;
+  branch: string;
+  status: "online" | "offline" | "pending";
+  devices: number;
+  lastSeen: string;
+};
+
+export const NETWORK_STATIONS: NetworkStation[] = [
+  { id: "ST-01", name: "PumpStation 01", area: "Area A", branch: "Branch 04", status: "online", devices: 4, lastSeen: "Just now" },
+  { id: "ST-02", name: "PumpStation 02", area: "Area A", branch: "Branch 04", status: "online", devices: 2, lastSeen: "1 min ago" },
+  { id: "ST-03", name: "PumpStation 03", area: "Area A", branch: "Branch 05", status: "offline", devices: 3, lastSeen: "18 min ago" },
+  { id: "ST-04", name: "PumpStation 04", area: "Area A", branch: "Branch 04", status: "online", devices: 3, lastSeen: "Just now" },
+  { id: "ST-05", name: "PumpStation 05", area: "Area B", branch: "Branch 07", status: "pending", devices: 1, lastSeen: "Not connected" },
+  { id: "ST-06", name: "PumpStation 06", area: "Area B", branch: "Branch 07", status: "online", devices: 2, lastSeen: "2 min ago" },
+];
+
 export const DEVICE = {
   model: "Dahua DHI-ASI1201E",
   serial: "6H08A84PAJ00107",
