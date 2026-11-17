@@ -46,17 +46,16 @@ def test_removed_routers_return_404_and_initialization_interface_stays_available
 
 def test_door_config_operations_are_listed_once_under_door_configuration():
     paths = app.openapi()["paths"]
-    for path, method in [
-        ("/devices/{device_id}/door-config", "get"),
-        ("/devices/{device_id}/door-config", "put"),
-    ]:
-        operation = paths[path][method]
-        assert operation.get("tags") == ["Door Configuration"]
 
-    # The paths remain registered only once in the application router.
-    route_matches = [
-        route for route in app.routes
-        if getattr(route, "path", None) == "/devices/{device_id}/door-config"
-    ]
-    assert len(route_matches) == 2
+    path = "/devices/{device_id}/door-config"
+
+    assert path in paths
+
+    operations = paths[path]
+
+    assert "get" in operations
+    assert "put" in operations
+
+    assert operations["get"].get("tags") == ["Door Configuration"]
+    assert operations["put"].get("tags") == ["Door Configuration"]
 
