@@ -1,0 +1,44 @@
+DAHUA ACCESS CONTROL BACKEND — REPLACEMENT GUIDE
+================================================
+
+This archive contains the complete backend source tree and bundled Dahua
+Python SDK wheel. It intentionally does NOT contain your .venv, .env,
+production/local database, device encryption key, or temporary test caches.
+
+SAFE REPLACEMENT (recommended)
+------------------------------
+1. Stop the running API (close the terminal running run.bat / Uvicorn).
+2. Make a backup copy of your current backend folder.
+3. Extract this ZIP. It creates a folder named dahua_access_starter.
+4. Copy your existing .env file into the extracted folder, if you use one.
+5. Copy your existing data folder contents into the extracted folder's data
+   folder. In particular, preserve:
+      data/dahua_access.db
+      data/device_secret.key
+   Do not replace the old device_secret.key with a newly generated key. Losing
+   that key can make saved device passwords impossible to decrypt.
+6. Keep your existing .venv if you are extracting over the current folder.
+   If you extract into a new folder, recreate the environment there:
+      python -m venv .venv
+      .venv\Scripts\Activate.ps1
+      python -m pip install -r requirements.txt
+      python -m pip install vendor\NetSDK-2.0.0.1-py3-none-win_amd64.whl
+7. To run tests, install the test dependencies and run:
+      python -m pip install -r requirements-test.txt
+      python -m pytest -q
+8. Start the API with:
+      run.bat
+
+SENSOR PUT VALIDATION
+---------------------
+The sensor PUT implementation uses Dahua's AccessControl structured
+ParseData -> modify -> PacketData -> SetNewDevConfig flow, checks the
+configuration status, and reads the value back from the controller.
+
+The automated tests use mocks. They do not prove a physical ASI1201E write.
+After the test suite passes, first confirm GET for your device, then perform
+one controlled PUT and confirm the returned sensor_enabled value using a
+separate GET. Do not report a successful update unless read-back confirms it.
+
+The project uses a Windows x64 Dahua SDK wheel. Run the backend on the
+supported Windows environment with the Dahua runtime DLLs bundled in the wheel.

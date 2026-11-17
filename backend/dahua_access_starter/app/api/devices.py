@@ -29,8 +29,22 @@ from app.services.door_config import (
 
 class DoorSensorUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    sensor_enabled: bool
+    # All fields are optional so callers can update just one setting while
+    # preserving every other value currently configured on the controller.
+    sensor_enabled: bool | None = None
+    close_check_sensor: bool | None = None
+    close_timeout: int | None = Field(default=None, ge=0)
+    door_not_closed_alarm_enable: bool | None = None
+    forced_entry_alarm_enable: bool | None = None
+    duress_alarm_enable: bool | None = None
+    unlock_duration_seconds: float | None = Field(default=None, ge=0.2, le=600)
     door_index: int = Field(default=0, ge=0)
+
+    def requested_changes(self) -> dict[str, bool | int | float]:
+        changes = self.model_dump(exclude={"door_index"}, exclude_none=True)
+        if not changes:
+            raise ValueError("At least one door configuration field must be provided.")
+        return changes
 
 
 router = APIRouter(prefix="/devices", tags=["Devices"])
@@ -154,6 +168,10 @@ def read_door_config(
         "close_check_sensor": config.close_check_sensor,
         "close_timeout": config.close_timeout,
         "door_not_closed_alarm_enable": config.door_not_closed_alarm_enable,
+        "forced_entry_alarm_enable": config.forced_entry_alarm_enable,
+        "duress_alarm_enable": config.duress_alarm_enable,
+        "alarm_enabled": config.alarm_enabled,
+        "unlock_duration_seconds": config.unlock_duration_seconds,
         "source": "dahua_netsdk_accesscontrol_readback",
     }
 
@@ -164,14 +182,17 @@ def update_door_config(
     payload: DoorSensorUpdate,
     db: Session = Depends(get_db),
 ):
-    """Change only the door sensor flag and verify it by reading the controller back."""
+    """Update supported AccessControl door options and verify controller readback."""
     device = _get_device(db, device_id)
     try:
+        changes = payload.requested_changes()
         config = set_door_sensor_config(
             device,
-            sensor_enabled=payload.sensor_enabled,
+            changes=changes,
             door_index=payload.door_index,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except DoorConfigError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {
@@ -182,6 +203,10 @@ def update_door_config(
         "close_check_sensor": config.close_check_sensor,
         "close_timeout": config.close_timeout,
         "door_not_closed_alarm_enable": config.door_not_closed_alarm_enable,
+        "forced_entry_alarm_enable": config.forced_entry_alarm_enable,
+        "duress_alarm_enable": config.duress_alarm_enable,
+        "alarm_enabled": config.alarm_enabled,
+        "unlock_duration_seconds": config.unlock_duration_seconds,
         "verified": True,
         "source": "dahua_netsdk_accesscontrol_readback",
     }
