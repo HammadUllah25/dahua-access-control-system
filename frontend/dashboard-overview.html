@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Washroom Access Control - Dashboard Overview</title>
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark');
+      } catch (e) {}
+    })();
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            background: 'var(--background)',
+            foreground: 'var(--foreground)',
+            card: 'var(--card)',
+            'card-foreground': 'var(--card-foreground)',
+            primary: 'var(--primary)',
+            'primary-foreground': 'var(--primary-foreground)',
+            secondary: 'var(--secondary)',
+            'secondary-foreground': 'var(--secondary-foreground)',
+            muted: 'var(--muted)',
+            'muted-foreground': 'var(--muted-foreground)',
+            accent: 'var(--accent)',
+            border: 'var(--border)',
+            ring: 'var(--ring)',
+            sidebar: 'var(--sidebar)',
+            'sidebar-foreground': 'var(--sidebar-foreground)',
+            'sidebar-border': 'var(--sidebar-border)',
+            'sidebar-accent': 'var(--sidebar-accent)',
+          },
+          borderRadius: { lg: '0.75rem', md: '0.625rem', sm: '0.5rem' }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --background: oklch(0.984 0.002 260);
+      --foreground: oklch(0.21 0.02 260);
+      --card: #ffffff;
+      --card-foreground: oklch(0.21 0.02 260);
+      --primary: oklch(0.53 0.11 75);
+      --primary-foreground: #ffffff;
+      --secondary: oklch(0.955 0.004 260);
+      --secondary-foreground: oklch(0.21 0.02 260);
+      --muted: oklch(0.955 0.004 260);
+      --muted-foreground: oklch(0.5 0.015 260);
+      --accent: oklch(0.955 0.004 260);
+      --border: oklch(0.922 0.005 260);
+      --ring: oklch(0.53 0.11 75);
+      --sidebar: oklch(0.968 0.004 260);
+      --sidebar-foreground: oklch(0.21 0.02 260);
+      --sidebar-border: oklch(0.922 0.005 260);
+      --sidebar-accent: oklch(0.944 0.005 260);
+      --led-green: oklch(0.51 0.11 155);
+      --led-amber: oklch(0.53 0.11 75);
+      --led-red: oklch(0.55 0.2 29);
+      --chart-1: oklch(0.53 0.11 75);
+      --chart-2: oklch(0.45 0.1 75);
+      --chart-grid: oklch(0.922 0.005 260);
+      --tooltip-bg: #ffffff;
+      --tooltip-fg: #111827;
+      --tooltip-border: oklch(0.922 0.005 260);
+    }
+    .dark {
+      --background: oklch(0.165 0.015 260);
+      --foreground: oklch(0.93 0.008 260);
+      --card: oklch(0.21 0.018 260);
+      --card-foreground: oklch(0.93 0.008 260);
+      --primary: oklch(0.8 0.14 75); /* same dark-mode yellow */
+      --primary-foreground: oklch(0.21 0.018 260);
+      --secondary: oklch(0.26 0.015 260);
+      --secondary-foreground: oklch(0.93 0.008 260);
+      --muted: oklch(0.26 0.015 260);
+      --muted-foreground: oklch(0.68 0.01 260);
+      --accent: oklch(0.26 0.015 260);
+      --border: oklch(0.32 0.012 260);
+      --ring: oklch(0.8 0.14 75);
+      --sidebar: oklch(0.19 0.016 260);
+      --sidebar-foreground: oklch(0.93 0.008 260);
+      --sidebar-border: oklch(0.32 0.012 260);
+      --sidebar-accent: oklch(0.26 0.015 260);
+      --led-green: oklch(0.75 0.16 155);
+      --led-amber: oklch(0.8 0.14 75);
+      --led-red: oklch(0.65 0.19 29);
+      --chart-1: oklch(0.8 0.14 75);
+      --chart-2: oklch(0.86 0.12 85);
+      --chart-grid: oklch(0.32 0.012 260);
+      --tooltip-bg: oklch(0.21 0.018 260);
+      --tooltip-fg: oklch(0.93 0.008 260);
+      --tooltip-border: oklch(0.32 0.012 260);
+    }
+    html, body { background: var(--background); color: var(--foreground); }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    .card { background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: 0.75rem; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04); }
+    .card-glow { transition: box-shadow .2s ease, border-color .2s ease; }
+    .card-glow:hover { box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 28%, transparent), 0 12px 28px -18px color-mix(in oklab, var(--primary) 40%, transparent); border-color: color-mix(in oklab, var(--primary) 22%, var(--border)); }
+    .muted { color: var(--muted-foreground); }
+    .badge { display:inline-flex; align-items:center; gap:.3rem; border-radius:9999px; padding:.15rem .55rem; font-size:.75rem; font-weight:500; line-height:1rem; border:1px solid transparent; white-space:nowrap; }
+    .badge-green { background: color-mix(in oklab, var(--led-green) 14%, transparent); color: var(--led-green); border-color: color-mix(in oklab, var(--led-green) 28%, transparent); }
+    .badge-amber { background: color-mix(in oklab, var(--led-amber) 14%, transparent); color: var(--led-amber); border-color: color-mix(in oklab, var(--led-amber) 28%, transparent); }
+    .badge-red { background: color-mix(in oklab, var(--led-red) 14%, transparent); color: var(--led-red); border-color: color-mix(in oklab, var(--led-red) 28%, transparent); }
+    .badge-gray { background: color-mix(in oklab, var(--muted) 80%, transparent); color: var(--muted-foreground); border-color: var(--border); }
+    .dot { width:.5rem; height:.5rem; border-radius:9999px; display:inline-block; flex-shrink:0; }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:separate; border-spacing:0; }
+    th, td { padding:.625rem .75rem; text-align:left; font-size:.8125rem; border-bottom:1px solid var(--border); vertical-align:middle; }
+    th { font-size:.75rem; font-weight:600; color:var(--muted-foreground); background:color-mix(in oklab, var(--muted) 45%, transparent); }
+    tbody tr:hover td { background: color-mix(in oklab, var(--muted) 30%, transparent); }
+    tr:last-child td { border-bottom:0; }
+    .kpi { font-variant-numeric: tabular-nums; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:.375rem; height:2rem; padding:0 .75rem; border-radius:.5rem; font-size:.8125rem; font-weight:500; border:1px solid var(--border); background:var(--card); color:var(--foreground); }
+    .btn:hover { background: var(--muted); }
+    .led { position:relative; display:inline-flex; width:.625rem; height:.625rem; }
+    .led span { position:absolute; inset:0; border-radius:9999px; }
+    .led .ping { animation: ping 1.5s cubic-bezier(0,0,.2,1) infinite; opacity:.55; }
+    @keyframes ping { 75%,100% { transform: scale(2); opacity:0; } }
+    .sidebar-link { display:flex; align-items:center; gap:.625rem; padding:.45rem .625rem; border-radius:.5rem; font-size:.8125rem; color:var(--sidebar-foreground); }
+    .sidebar-link:hover { background: var(--sidebar-accent); }
+    .sidebar-link.active { background: color-mix(in oklab, var(--primary) 14%, transparent); color: var(--foreground); font-weight:500; }
+    .sidebar-label { font-size:.7rem; font-weight:600; letter-spacing:.02em; color: var(--muted-foreground); padding: .5rem .625rem .25rem; text-transform: uppercase; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="hidden lg:flex w-64 shrink-0 flex-col border-r" style="background:var(--sidebar); border-color:var(--sidebar-border); color:var(--sidebar-foreground);">
+      <div class="flex items-center gap-2.5 px-4 py-4 border-b" style="border-color:var(--sidebar-border)">
+        <span class="flex size-8 items-center justify-center rounded-md" style="background:var(--primary); color:var(--primary-foreground)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect width="10" height="8" x="7" y="8" rx="1"/></svg>
+        </span>
+        <div class="leading-tight">
+          <div class="text-sm font-semibold tracking-tight">Command centre</div>
+          <div class="text-xs muted">Super Admin workspace</div>
+        </div>
+      </div>
+      <nav class="flex-1 overflow-y-auto p-2">
+        <div class="sidebar-label">Operations</div>
+        <a class="sidebar-link active" href="#"><span class="dot" style="background:var(--primary); width:.4rem; height:.4rem"></span>Overview</a>
+        <a class="sidebar-link" href="#">Live Monitoring</a>
+        <a class="sidebar-link" href="#">Access Logs</a>
+        <a class="sidebar-link" href="#">Notifications</a>
+        <div class="sidebar-label mt-2">Network</div>
+        <a class="sidebar-link" href="#">Stations</a>
+        <div class="sidebar-label mt-2">People & access</div>
+        <a class="sidebar-link" href="#">Users & Roles</a>
+        <a class="sidebar-link" href="#">People & Cards</a>
+        <a class="sidebar-link" href="#">Access Schedules</a>
+        <div class="sidebar-label mt-2">Station</div>
+        <a class="sidebar-link" href="#">Device & Door</a>
+        <a class="sidebar-link" href="#">Add Device</a>
+        <a class="sidebar-link" href="#">Alerts & Events</a>
+        <div class="sidebar-label mt-2">Insights</div>
+        <a class="sidebar-link" href="#">Reports</a>
+        <a class="sidebar-link" href="#">Settings</a>
+      </nav>
+      <div class="border-t p-3" style="border-color:var(--sidebar-border)">
+        <div class="flex items-center gap-2 text-xs font-medium"><span class="led"><span class="ping" style="background:var(--led-green)"></span><span style="background:var(--led-green)"></span></span>Monitoring active</div>
+        <p class="mt-1 font-mono text-[0.6875rem] muted">Super Admin · Every station and branch</p>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 min-w-0">
+      <!-- Top header bar -->
+      <header class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b px-4 py-3 lg:px-6" style="background:color-mix(in oklab, var(--background) 85%, transparent); backdrop-filter: blur(8px); border-color:var(--border)">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="lg:hidden flex size-8 items-center justify-center rounded-md border" style="border-color:var(--border)">≡</div>
+          <div class="min-w-0">
+            <div class="text-sm font-medium truncate">Overview</div>
+            <div class="text-xs muted truncate">Washroom access control dashboard</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="badge badge-green"><span class="dot" style="background:var(--led-green)"></span>Operational</span>
+          <button id="themeToggle" type="button" class="btn" aria-label="Toggle dark mode"><span id="themeIcon">🌙</span><span id="themeLabel" class="hidden sm:inline">Dark</span></button>
+        </div>
+      </header>
+
+      <div class="flex flex-col gap-4 p-4 lg:p-6">
+        <!-- Page header + date range -->
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-semibold tracking-tight">Super Admin command centre</h2>
+            <p class="text-xs muted">Monitoring every station and branch across the network</p>
+          </div>
+          <div class="inline-flex rounded-lg border p-0.5" style="border-color:var(--border); background:var(--muted)">
+            <span class="px-3 py-1 text-xs rounded-md" style="color:var(--muted-foreground)">Today</span>
+            <span class="px-3 py-1 text-xs rounded-md font-medium" style="background:var(--card); box-shadow:0 1px 2px rgb(0 0 0 / .06)">Last 7 days</span>
+            <span class="px-3 py-1 text-xs rounded-md" style="color:var(--muted-foreground)">Last 30 days</span>
+          </div>
+        </div>
+
+        <!-- Role scope banner -->
+        <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm" style="background:color-mix(in oklab, var(--muted) 35%, transparent); border-color:var(--border)">
+          <div class="flex items-center gap-2">
+            <svg class="size-4 shrink-0" style="color:var(--primary)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+            <span class="font-medium">Super Admin view</span>
+            <span class="text-xs muted">· Every station and branch</span>
+          </div>
+          <a href="#" class="text-xs font-medium" style="color:var(--primary)">Monitor stations · 4/6 online</a>
+        </div>
+
+        <!-- System status banner -->
+        <div role="status" class="flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm" style="border-color:color-mix(in oklab, var(--led-green) 28%, transparent); background:color-mix(in oklab, var(--led-green) 10%, transparent)">
+          <svg class="size-4 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+          <span class="font-medium">Operational</span>
+          <span class="text-xs muted">Controller online · 1 active alert(s)</span>
+        </div>
+
+        <!-- KPI row -->
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <a href="#" class="card card-glow p-4 block">
+            <div class="flex items-start justify-between gap-2"><p class="text-xs muted">Total scans</p><span class="muted">▦</span></div>
+            <p class="mt-1 text-2xl font-semibold kpi">3,284</p>
+            <p class="mt-1 text-xs muted">attempts incl. denied · last 7 days</p>
+          </a>
+          <a href="#" class="card card-glow p-4 block">
+            <div class="flex items-start justify-between gap-2"><p class="text-xs muted">Granted access</p><span style="color:var(--led-green)">✓</span></div>
+            <p class="mt-1 text-2xl font-semibold kpi" style="color:var(--led-green)">2,936</p>
+            <p class="mt-1 text-xs muted inline-flex items-center gap-1"><span style="color:var(--led-green)">↑</span> 4.2% vs previous period</p>
+          </a>
+          <a href="#" class="card card-glow p-4 block">
+            <div class="flex items-start justify-between gap-2"><p class="text-xs muted">Denied access</p><span style="color:var(--led-red)">✕</span></div>
+            <p class="mt-1 text-2xl font-semibold kpi" style="color:var(--led-red)">348</p>
+            <p class="mt-1 text-xs muted">click to open filtered logs</p>
+          </a>
+          <div class="card card-glow p-4">
+            <div class="flex items-start justify-between gap-2"><p class="text-xs muted">Success rate</p><span class="muted">◔</span></div>
+            <p class="mt-1 text-2xl font-semibold kpi">89.4%</p>
+            <p class="mt-1 text-xs muted">2,936 of 3,284 attempts · last 7 days</p>
+          </div>
+          <a href="#" class="card card-glow p-4 block">
+            <div class="flex items-start justify-between gap-2"><p class="text-xs muted">Controller status</p><span style="color:var(--led-green)">●</span></div>
+            <p class="mt-1 text-2xl font-semibold kpi" style="color:var(--led-green)">Online</p>
+            <p class="mt-1 text-xs muted">last seen 2026-11-11 17:59:54</p>
+          </a>
+        </div>
+
+        <!-- Foot Fall + Access outcomes -->
+        <div class="grid gap-4 lg:grid-cols-3">
+          <section class="card card-glow p-5 lg:col-span-2">
+            <div class="mb-3">
+              <h3 class="text-sm font-semibold tracking-tight">Foot Fall</h3>
+              <p class="text-xs muted">Granted and denied scans by outlet · Central region</p>
+            </div>
+            <div class="h-80"><canvas id="footfallChart"></canvas></div>
+          </section>
+          <section class="card card-glow p-5">
+            <div class="mb-3">
+              <h3 class="text-sm font-semibold tracking-tight">Access outcomes</h3>
+              <p class="text-xs muted">Granted vs denied · last 7 days</p>
+            </div>
+            <div class="flex h-full flex-col items-center justify-center gap-4">
+              <div class="relative h-40 w-40">
+                <canvas id="outcomeChart"></canvas>
+                <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                  <span class="text-2xl font-semibold kpi">3,284</span>
+                  <span class="text-xs muted">total scans</span>
+                </div>
+              </div>
+              <div class="w-full space-y-1.5 text-xs">
+                <div class="flex items-center justify-between"><span class="inline-flex items-center gap-2"><span class="dot" style="background:var(--chart-1)"></span>Granted</span><span class="kpi muted">2,936 · 89.4%</span></div>
+                <div class="flex items-center justify-between"><span class="inline-flex items-center gap-2"><span class="dot" style="background:var(--led-red)"></span>Denied</span><span class="kpi muted">348 · 10.6%</span></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Station total sales comparison (new) -->
+        <section class="card card-glow p-5">
+          <div class="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h3 class="text-sm font-semibold tracking-tight">Station Total Sales Comparison</h3>
+              <p class="text-xs muted">Total sales compared across all stations</p>
+            </div>
+            <span class="badge badge-amber">All stations</span>
+          </div>
+          <div class="h-72"><canvas id="salesChart"></canvas></div>
+        </section>
+
+        <!-- Station map -->
+        <section class="card card-glow p-5">
+          <div class="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold tracking-tight">Station map</h3>
+              <p class="text-xs muted">Installed access readers at the station · Google Maps</p>
+            </div>
+            <span class="text-xs font-medium muted">3 access points</span>
+          </div>
+          <div class="grid gap-4 lg:grid-cols-3">
+            <div class="relative h-72 overflow-hidden rounded-lg border sm:h-80 lg:col-span-2 lg:h-[420px]" style="border-color:var(--border)">
+              <iframe title="Station location on Google Maps" src="https://maps.google.com/maps?q=25.2048,55.2708&z=16&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade" class="absolute inset-0 h-full w-full border-0 dark:invert dark:hue-rotate-180 dark:brightness-90 dark:contrast-90 dark:saturate-50 grayscale sepia-[.3] contrast-[.95]"></iframe>
+              <div aria-hidden class="pointer-events-none absolute inset-0" style="background:color-mix(in oklab, var(--primary) 10%, transparent); mix-blend-mode:multiply"></div>
+              <div aria-hidden class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-black/5 dark:from-black/40 dark:to-transparent"></div>
+              <!-- markers -->
+              <div class="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style="left:38%; top:44%">
+                <span class="relative flex size-4 items-center justify-center"><span class="led"><span class="ping" style="background:var(--led-green)"></span><span style="background:var(--led-green); box-shadow:0 0 0 2px var(--card)"></span></span></span>
+                <span class="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium shadow-sm border" style="background:color-mix(in oklab, var(--card) 92%, transparent); border-color:var(--border)">Washroom entry</span>
+              </div>
+              <div class="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style="left:26%; top:66%">
+                <span class="relative flex size-4 items-center justify-center"><span class="led"><span class="ping" style="background:var(--led-green)"></span><span style="background:var(--led-green); box-shadow:0 0 0 2px var(--card)"></span></span></span>
+                <span class="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium shadow-sm border" style="background:color-mix(in oklab, var(--card) 92%, transparent); border-color:var(--border)">Washroom exit</span>
+              </div>
+              <div class="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style="left:58%; top:30%">
+                <span class="relative flex size-4 items-center justify-center"><span class="led"><span class="ping" style="background:var(--led-amber)"></span><span style="background:var(--led-amber); box-shadow:0 0 0 2px var(--card)"></span></span></span>
+                <span class="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium shadow-sm border" style="background:color-mix(in oklab, var(--card) 92%, transparent); border-color:var(--border)">Shop staff door</span>
+              </div>
+            </div>
+            <ul class="grid gap-2 sm:grid-cols-3 lg:grid-cols-1 lg:content-start">
+              <li class="flex items-start gap-2 rounded-lg border px-3 py-2" style="border-color:var(--border); background:color-mix(in oklab, var(--background) 40%, transparent)"><span class="led mt-1"><span class="ping" style="background:var(--led-green)"></span><span style="background:var(--led-green)"></span></span><div class="min-w-0"><p class="truncate text-xs font-medium">Washroom entry · Reader 1</p><p class="text-[11px] muted">Washroom block · DHI-ASI1201E</p><p class="text-[11px] font-medium" style="color:var(--led-green)">Online</p></div></li>
+              <li class="flex items-start gap-2 rounded-lg border px-3 py-2" style="border-color:var(--border); background:color-mix(in oklab, var(--background) 40%, transparent)"><span class="led mt-1"><span class="ping" style="background:var(--led-green)"></span><span style="background:var(--led-green)"></span></span><div class="min-w-0"><p class="truncate text-xs font-medium">Washroom exit · Reader 2</p><p class="text-[11px] muted">Washroom block · DHI-ASI1201E</p><p class="text-[11px] font-medium" style="color:var(--led-green)">Online</p></div></li>
+              <li class="flex items-start gap-2 rounded-lg border px-3 py-2" style="border-color:var(--border); background:color-mix(in oklab, var(--background) 40%, transparent)"><span class="led mt-1"><span class="ping" style="background:var(--led-amber)"></span><span style="background:var(--led-amber)"></span></span><div class="min-w-0"><p class="truncate text-xs font-medium">Shop staff door</p><p class="text-[11px] muted">Shop & kiosk · DHI-ASI1201E</p><p class="text-[11px] font-medium" style="color:var(--led-amber)">Pending</p></div></li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- Usage by hour + Device & door -->
+        <div class="grid gap-4 lg:grid-cols-2">
+          <section class="card card-glow p-5">
+            <div class="mb-3"><h3 class="text-sm font-semibold tracking-tight">Usage by hour</h3><p class="text-xs muted">Scan volume grouped by hour of day</p></div>
+            <div class="h-56"><canvas id="hourlyChart"></canvas></div>
+          </section>
+          <section class="card card-glow p-5">
+            <div class="mb-3 flex items-start justify-between gap-2"><div><h3 class="text-sm font-semibold tracking-tight">Device & door status</h3><p class="text-xs muted">Controller connection and door state where a contact sensor is installed</p></div><a href="#" class="text-xs font-medium" style="color:var(--primary)">Device &amp; Door</a></div>
+            <dl class="space-y-3 text-sm">
+              <div class="flex items-center justify-between gap-3"><dt class="muted">Controller</dt><dd class="flex items-center gap-2 font-medium"><span class="led"><span class="ping" style="background:var(--led-green)"></span><span style="background:var(--led-green)"></span></span>Online</dd></div>
+              <div class="flex items-center justify-between gap-3"><dt class="muted">Device</dt><dd class="font-mono text-xs">Dahua DHI-ASI1201E · 6H08A84PAJ00107</dd></div>
+              <div class="flex items-center justify-between gap-3"><dt class="muted">Last seen</dt><dd class="font-mono text-xs">2026-11-11 17:59:54</dd></div>
+              <div class="flex items-center justify-between gap-3"><dt class="muted">Door contact <span class="ml-1 text-xs muted">(physical sensor)</span></dt><dd class="font-medium">Closed</dd></div>
+              <div class="flex items-center justify-between gap-3"><dt class="muted">Lock relay command</dt><dd class="font-mono text-xs">Energised (locked)</dd></div>
+              <p class="rounded-md p-2 text-xs muted" style="background:color-mix(in oklab, var(--muted) 55%, transparent)">Relay command is not proof the door physically opened — state above comes from the wired door contact sensor.</p>
+            </dl>
+          </section>
+        </div>
+
+        <!-- Access rhythm + Denial reasons -->
+        <div class="grid gap-4 lg:grid-cols-2">
+          <section class="card card-glow p-5 flex flex-col">
+            <header class="flex items-start justify-between gap-3"><div><h3 class="text-sm font-semibold tracking-tight">Access rhythm</h3><p class="text-xs muted">When the washroom reader sees the most traffic</p></div><span class="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium" style="background:color-mix(in oklab, var(--primary) 12%, transparent); color:var(--primary)">Peak · Midday</span></header>
+            <div class="mt-2 h-64"><canvas id="rhythmChart"></canvas></div>
+            <div class="mt-auto flex items-center justify-between gap-3 border-t pt-3 text-xs muted" style="border-color:var(--border)"><span>3,284 scans in period</span><span class="kpi">busiest midday · 842</span></div>
+          </section>
+          <section class="card card-glow p-5 flex flex-col">
+            <header class="flex items-start justify-between gap-3"><div><h3 class="text-sm font-semibold tracking-tight">Denied by reason</h3><p class="text-xs muted">Why the reader refused a card</p></div><span class="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium" style="background:color-mix(in oklab, var(--led-red) 12%, transparent); color:var(--led-red)">348 denied · 10.6%</span></header>
+            <div class="mt-2 h-64"><canvas id="denialChart"></canvas></div>
+            <p class="mt-auto border-t pt-3 text-xs muted" style="border-color:var(--border)">Percentage is of all scans in the selected period.</p>
+          </section>
+        </div>
+
+        <!-- Gender-wise entries + split (new) -->
+        <div class="grid gap-4 lg:grid-cols-3">
+          <section class="card card-glow p-5 lg:col-span-2">
+            <div class="mb-3 flex flex-wrap items-end justify-between gap-2"><div><h3 class="text-sm font-semibold tracking-tight">Washroom Entries (Gender-wise)</h3><p class="text-xs muted">Women’s and men’s washroom entries shown separately</p></div><div class="flex items-center gap-2 text-xs"><span class="badge badge-gray"><span class="dot" style="background:#a855f7"></span>Women: 1,542</span><span class="badge badge-gray"><span class="dot" style="background:#0ea5e9"></span>Men: 1,394</span></div></div>
+            <div class="table-wrap"><table><thead><tr><th>Time</th><th>Station</th><th>Washroom</th><th>Person / Type</th><th>Card</th><th>Result</th><th>Note</th></tr></thead><tbody>
+              <tr><td class="font-mono text-xs">11 Nov 17:58:12</td><td>Zahirpir F/s North bound</td><td><span class="badge" style="background:color-mix(in oklab,#a855f7 14%,transparent);color:#a855f7;border-color:color-mix(in oklab,#a855f7 28%,transparent)">Women’s Washroom</span></td><td>A. Rahman <span class="muted text-xs">(Staff)</span></td><td class="font-mono text-xs">0142 ···· 8871</td><td><span class="badge badge-green">Granted</span></td><td class="muted">Entry recorded</td></tr>
+              <tr><td class="font-mono text-xs">11 Nov 17:55:40</td><td>Multan FS</td><td><span class="badge" style="background:color-mix(in oklab,#0ea5e9 14%,transparent);color:#0ea5e9;border-color:color-mix(in oklab,#0ea5e9 28%,transparent)">Men’s Washroom</span></td><td>Visitor</td><td class="font-mono text-xs">0142 ···· 3298</td><td><span class="badge badge-green">Granted</span></td><td class="muted">General card scan</td></tr>
+              <tr><td class="font-mono text-xs">11 Nov 17:49:03</td><td>Al Wahid Fs</td><td><span class="badge" style="background:color-mix(in oklab,#a855f7 14%,transparent);color:#a855f7;border-color:color-mix(in oklab,#a855f7 28%,transparent)">Women’s Washroom</span></td><td>M. Okonkwo <span class="muted text-xs">(Staff)</span></td><td class="font-mono text-xs">0142 ···· 4419</td><td><span class="badge badge-green">Granted</span></td><td class="muted">Own staff card</td></tr>
+              <tr><td class="font-mono text-xs">11 Nov 17:46:18</td><td>Taj -2</td><td><span class="badge" style="background:color-mix(in oklab,#0ea5e9 14%,transparent);color:#0ea5e9;border-color:color-mix(in oklab,#0ea5e9 28%,transparent)">Men’s Washroom</span></td><td>Staff</td><td class="font-mono text-xs">0142 ···· 7712</td><td><span class="badge badge-red">Denied</span></td><td class="muted">Outside time section</td></tr>
+              <tr><td class="font-mono text-xs">11 Nov 17:41:55</td><td>Al Rafay Fs</td><td><span class="badge" style="background:color-mix(in oklab,#a855f7 14%,transparent);color:#a855f7;border-color:color-mix(in oklab,#a855f7 28%,transparent)">Women’s Washroom</span></td><td>S. Farouk <span class="muted text-xs">(Visitor)</span></td><td class="font-mono text-xs">0142 ···· 9034</td><td><span class="badge badge-green">Granted</span></td><td class="muted">Profile card</td></tr>
+              <tr><td class="font-mono text-xs">11 Nov 17:38:27</td><td>Sher Shah</td><td><span class="badge" style="background:color-mix(in oklab,#0ea5e9 14%,transparent);color:#0ea5e9;border-color:color-mix(in oklab,#0ea5e9 28%,transparent)">Men’s Washroom</span></td><td>Visitor</td><td class="font-mono text-xs">0142 ···· 1185</td><td><span class="badge badge-red">Denied</span></td><td class="muted">Card blocked</td></tr>
+              <tr><td class="font-mono text-xs">11 Nov 17:33:09</td><td>Magic River</td><td><span class="badge" style="background:color-mix(in oklab,#0ea5e9 14%,transparent);color:#0ea5e9;border-color:color-mix(in oklab,#0ea5e9 28%,transparent)">Men’s Washroom</span></td><td>L. D'Souza <span class="muted text-xs">(Staff)</span></td><td class="font-mono text-xs">0142 ···· 6642</td><td><span class="badge badge-green">Granted</span></td><td class="muted">Shared/general area card</td></tr>
+              <tr><td class="font-mono text-xs">11 Nov 17:29:44</td><td>Zahirpir F/s South bound</td><td><span class="badge" style="background:color-mix(in oklab,#a855f7 14%,transparent);color:#a855f7;border-color:color-mix(in oklab,#a855f7 28%,transparent)">Women’s Washroom</span></td><td>Staff</td><td class="font-mono text-xs">0142 ···· 5560</td><td><span class="badge badge-amber">Pending</span></td><td class="muted">Sync pending verification</td></tr>
+            </tbody></table></div>
+          </section>
+          <section class="card card-glow p-5">
+            <div class="mb-3"><h3 class="text-sm font-semibold tracking-tight">Gender Entry Split</h3><p class="text-xs muted">Separate totals for women’s and men’s washrooms</p></div>
+            <div class="relative mx-auto mt-2 h-60 w-full max-w-[260px]">
+              <canvas id="genderChart"></canvas>
+              <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center"><span class="text-2xl font-semibold kpi">2,936</span><span class="text-xs muted">Total entries</span></div>
+            </div>
+            <div class="mt-4 grid gap-2 text-sm">
+              <div class="flex items-center justify-between rounded-lg border px-3 py-2" style="border-color:var(--border); background:color-mix(in oklab, var(--muted) 30%, transparent)"><span class="inline-flex items-center gap-2"><span class="dot" style="background:#a855f7"></span>Women’s Washroom</span><span class="font-semibold kpi">1,542</span></div>
+              <div class="flex items-center justify-between rounded-lg border px-3 py-2" style="border-color:var(--border); background:color-mix(in oklab, var(--muted) 30%, transparent)"><span class="inline-flex items-center gap-2"><span class="dot" style="background:#0ea5e9"></span>Men’s Washroom</span><span class="font-semibold kpi">1,394</span></div>
+              <p class="text-xs muted">Entries tracked separately for women’s and men’s washrooms.</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- Sensor alert logs (new) -->
+        <section class="card card-glow p-5">
+          <div class="mb-3 flex flex-wrap items-end justify-between gap-2"><div><h3 class="text-sm font-semibold tracking-tight">Sensor Alert Logs</h3><p class="text-xs muted">Recent sensor/controller alerts (showing 10)</p></div><span class="badge badge-amber">10 alerts</span></div>
+          <div class="table-wrap"><table><thead><tr><th>Time</th><th>Station</th><th>Sensor / Alert</th><th>Severity</th><th>Status</th><th>Details</th></tr></thead><tbody>
+            <tr><td class="font-mono text-xs">11 Nov 17:45</td><td>Zahirpir F/s North bound</td><td>Gate held open (Door sensor)</td><td><span class="badge badge-amber">Warning</span></td><td><span class="badge badge-red">Active</span></td><td class="muted">Washroom entry gate open for about 2 minutes. Check and close door.</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 17:12</td><td>Al Wahid Fs</td><td>Motion sensor idle anomaly</td><td><span class="badge badge-gray">Info</span></td><td><span class="badge badge-amber">Acknowledged</span></td><td class="muted">No motion detected after granted entry; sensor health check recommended.</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 16:42</td><td>Multan FS</td><td>Door timeout sensor</td><td><span class="badge badge-amber">Warning</span></td><td><span class="badge badge-red">Active</span></td><td class="muted">Door held open longer than configured timeout after granted scan.</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 15:28</td><td>Taj -2</td><td>Occupancy sensor threshold</td><td><span class="badge badge-amber">Warning</span></td><td><span class="badge badge-red">Active</span></td><td class="muted">Occupancy above threshold for 4 minutes in women’s washroom zone.</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 14:09</td><td>Magic River</td><td>Reader tamper sensor</td><td><span class="badge badge-amber">Warning</span></td><td><span class="badge badge-amber">Acknowledged</span></td><td class="muted">Tamper input triggered briefly; enclosure inspected by staff.</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 12:51</td><td>Sher Shah</td><td>Door contact sensor mismatch</td><td><span class="badge badge-red">Critical</span></td><td><span class="badge badge-red">Active</span></td><td class="muted">Relay command and door contact state mismatch detected on men’s washroom door.</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 11:06</td><td>Al Rafay Fs</td><td>Humidity sensor alert</td><td><span class="badge badge-gray">Info</span></td><td><span class="badge badge-green">Resolved</span></td><td class="muted">Humidity level normalized after ventilation cycle.</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 09:17</td><td>Zahirpir F/s South bound</td><td>Card reader sensor event</td><td><span class="badge badge-gray">Info</span></td><td><span class="badge badge-amber">Acknowledged</span></td><td class="muted">Blocked card attempt detected and denied at reader sensor.</td></tr>
+            <tr><td class="font-mono text-xs">10 Nov 22:34</td><td>Multan FS</td><td>Low-light sensor warning</td><td><span class="badge badge-amber">Warning</span></td><td><span class="badge badge-green">Resolved</span></td><td class="muted">Lighting level dropped below threshold; maintenance notified.</td></tr>
+            <tr><td class="font-mono text-xs">10 Nov 21:03</td><td>Taj -2</td><td>Smoke/air-quality sensor check</td><td><span class="badge badge-gray">Info</span></td><td><span class="badge badge-green">Resolved</span></td><td class="muted">Air-quality reading returned to normal after routine check.</td></tr>
+          </tbody></table></div>
+        </section>
+
+        <!-- Recent access activity -->
+        <section class="card card-glow p-5">
+          <div class="mb-3 flex items-start justify-between gap-2"><div><h3 class="text-sm font-semibold tracking-tight">Recent access activity</h3><p class="text-xs muted">Latest authentication attempts at the washroom reader</p></div><a href="#" class="text-xs font-medium" style="color:var(--primary)">View all logs</a></div>
+          <div class="table-wrap"><table><thead><tr><th>Time</th><th>Person</th><th>Card</th><th>Result</th><th>Reason</th></tr></thead><tbody>
+            <tr><td class="font-mono text-xs">11 Nov 17:58:12</td><td>A. Rahman</td><td class="font-mono text-xs">0142 ···· 8871</td><td><span class="badge badge-green">Granted</span></td><td class="muted">—</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 17:55:40</td><td><span class="muted">Visitor</span></td><td class="font-mono text-xs">0142 ···· 3298</td><td><span class="badge badge-green">Granted</span></td><td class="muted">—</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 17:49:03</td><td>M. Okonkwo</td><td class="font-mono text-xs">0142 ···· 4419</td><td><span class="badge badge-green">Granted</span></td><td class="muted">—</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 17:46:18</td><td><span class="muted">Staff</span></td><td class="font-mono text-xs">0142 ···· 7712</td><td><span class="badge badge-red">Denied</span></td><td class="muted">Outside time section</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 17:41:55</td><td>S. Farouk</td><td class="font-mono text-xs">0142 ···· 9034</td><td><span class="badge badge-green">Granted</span></td><td class="muted">—</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 17:38:27</td><td><span class="muted">Visitor</span></td><td class="font-mono text-xs">0142 ···· 1185</td><td><span class="badge badge-red">Denied</span></td><td class="muted">Card blocked</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 17:33:09</td><td>L. D'Souza</td><td class="font-mono text-xs">0142 ···· 6642</td><td><span class="badge badge-green">Granted</span></td><td class="muted">—</td></tr>
+            <tr><td class="font-mono text-xs">11 Nov 17:29:44</td><td><span class="muted">Staff</span></td><td class="font-mono text-xs">0142 ···· 5560</td><td><span class="badge badge-amber">Pending</span></td><td class="muted">—</td></tr>
+          </tbody></table></div>
+        </section>
+
+        <p class="text-xs muted text-center pt-1">Single-file dashboard overview replica · dark mode (same yellow accent) · sidebar · KPIs · map · charts + sales, sensor alerts & gender-wise entries</p>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const outlets = ["Zahirpir F/s North bound","Zahirpir F/s South bound","Multan FS","Sher Shah","Al Wahid Fs","Taj -2","Al Rafay Fs","Magic River"];
+    const shortLabels = outlets.map(o => o.length > 14 ? o.slice(0,13) + '…' : o);
+    const granted = [210,120,185,40,230,80,195,115];
+    const denied  = [12,28,9,18,22,35,7,20];
+    const sales = [720000,410000,680000,290000,810000,360000,740000,430000];
+    const hourly = [8,6,4,3,5,12,28,62,88,74,52,64,92,78,46,48,66,84,70,38,22,18,12,10];
+    const hourLabels = Array.from({length:24},(_,i)=> String(i).padStart(2,'0')+':00');
+    const rhythm = [
+      {label:'Night', v:26},{label:'Morning', v:248},{label:'Midday', v:842},{label:'Afternoon', v:612},{label:'Evening', v:486},{label:'Late', v:70}
+    ];
+    const denialReasons = [
+      {reason:'Outside time section', count:96},
+      {reason:'Card blocked', count:78},
+      {reason:'No permission', count:64},
+      {reason:'Expired card', count:58},
+      {reason:'Invalid card', count:52},
+    ];
+
+    let charts = [];
+    function theme() {
+      const css = getComputedStyle(document.documentElement);
+      const g = v => css.getPropertyValue(v).trim();
+      const isDark = document.documentElement.classList.contains('dark');
+      return {
+        grid: g('--chart-grid') || (isDark ? '#334155' : '#e5e7eb'),
+        muted: g('--muted-foreground') || '#6b7280',
+        amber: g('--chart-1') || (isDark ? '#eab308' : '#b45309'),
+        amber2: g('--chart-2') || (isDark ? '#facc15' : '#92400e'),
+        red: g('--led-red') || '#dc2626',
+        tbg: g('--tooltip-bg') || '#fff',
+        tfg: g('--tooltip-fg') || '#111827',
+        tbd: g('--tooltip-border') || '#e5e7eb',
+        isDark
+      };
+    }
+
+    function baseOpts(t) {
+      Chart.defaults.font.family = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+      Chart.defaults.color = t.muted;
+      return {
+        tooltip: { backgroundColor: t.tbg, titleColor: t.tfg, bodyColor: t.tfg, borderColor: t.tbd, borderWidth: 1, padding: 10 },
+        grid: { color: t.grid }
+      };
+    }
+
+    function destroyCharts(){ charts.forEach(c=>c.destroy()); charts = []; }
+
+    function buildCharts(){
+      destroyCharts();
+      const t = theme();
+      const b = baseOpts(t);
+
+      charts.push(new Chart(document.getElementById('footfallChart'), {
+        type:'bar',
+        data:{ labels: outlets, datasets:[
+          { label:'Granted', data: granted, backgroundColor: t.amber, borderRadius:4, maxBarThickness:22 },
+          { label:'Denied', data: denied, backgroundColor: t.red, borderRadius:4, maxBarThickness:22 }
+        ]},
+        options:{
+          responsive:true, maintainAspectRatio:false,
+          interaction:{ mode:'index', intersect:false },
+          plugins:{ legend:{ position:'top', labels:{ boxWidth:10, boxHeight:10, usePointStyle:true, color:t.muted } }, tooltip:{ ...b.tooltip, callbacks:{ footer(items){ const g=items.find(i=>i.dataset.label==='Granted')?.parsed.y||0; const d=items.find(i=>i.dataset.label==='Denied')?.parsed.y||0; return 'Total: '+(g+d); } } } },
+          scales:{ x:{ grid:{ display:false }, ticks:{ maxRotation:0, minRotation:0, autoSkip:false, font:{size:10}, callback:(v,i)=>shortLabels[i], color:t.muted } }, y:{ beginAtZero:true, grid:b.grid, border:{display:false}, ticks:{ precision:0, color:t.muted } } }
+        }
+      }));
+
+      charts.push(new Chart(document.getElementById('outcomeChart'), {
+        type:'doughnut',
+        data:{ labels:['Granted','Denied'], datasets:[{ data:[2936,348], backgroundColor:[t.amber,t.red], borderWidth:0, hoverOffset:4 }]},
+        options:{ responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{ legend:{display:false}, tooltip:b.tooltip } }
+      }));
+
+      charts.push(new Chart(document.getElementById('salesChart'), {
+        type:'bar',
+        data:{ labels: outlets, datasets:[{ label:'Total Sales (PKR)', data: sales, backgroundColor: outlets.map((_,i)=> i%2===0 ? t.amber : t.amber2), borderRadius:6, maxBarThickness:36 }]},
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:{ ...b.tooltip, callbacks:{ label(ctx){ return ' Sales: PKR ' + (ctx.parsed.y||0).toLocaleString(); } } } }, scales:{ x:{ grid:{display:false}, ticks:{ maxRotation:0, minRotation:0, autoSkip:false, font:{size:10}, callback:(v,i)=>shortLabels[i], color:t.muted } }, y:{ beginAtZero:true, grid:b.grid, border:{display:false}, ticks:{ color:t.muted, callback:v=>'PKR '+(v/1000)+'k' } } } }
+      }));
+
+      charts.push(new Chart(document.getElementById('hourlyChart'), {
+        type:'bar',
+        data:{ labels: hourLabels, datasets:[{ label:'Scans', data: hourly, backgroundColor:t.amber, borderRadius:3, maxBarThickness:14 }]},
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:b.tooltip }, scales:{ x:{ grid:{display:false}, ticks:{ color:t.muted, font:{size:10}, maxRotation:0, autoSkip:true, maxTicksLimit:12 } }, y:{ beginAtZero:true, grid:b.grid, border:{display:false}, ticks:{ color:t.muted, precision:0 } } } }
+      }));
+
+      charts.push(new Chart(document.getElementById('rhythmChart'), {
+        type:'radar',
+        data:{ labels: rhythm.map(r=>r.label), datasets:[{ label:'Scans', data: rhythm.map(r=>r.v), borderColor:t.amber, backgroundColor: t.isDark ? 'rgba(234,179,8,0.18)' : 'rgba(180,83,9,0.18)', borderWidth:2, pointBackgroundColor:t.amber, pointRadius:3, pointHoverRadius:4, fill:true }]},
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:b.tooltip }, scales:{ r:{ angleLines:{ color:t.grid }, grid:{ color:t.grid }, pointLabels:{ color:t.muted, font:{size:11} }, ticks:{ display:false, backdropColor:'transparent' }, suggestedMin:0 } } }
+      }));
+
+      charts.push(new Chart(document.getElementById('denialChart'), {
+        type:'bar',
+        data:{ labels: denialReasons.map(r=>r.reason), datasets:[{ label:'Denied', data: denialReasons.map(r=>r.count), backgroundColor:t.red, borderRadius:4, barThickness:16 }]},
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:{ ...b.tooltip, callbacks:{ label(ctx){ const v=ctx.parsed.x||0; return ' '+v+' denied'; } } } }, scales:{ x:{ beginAtZero:true, grid:b.grid, border:{display:false}, ticks:{ color:t.muted, precision:0 } }, y:{ grid:{ display:false }, ticks:{ color:t.muted, font:{size:11} } } } }
+      }));
+
+      charts.push(new Chart(document.getElementById('genderChart'), {
+        type:'doughnut',
+        data:{ labels:["Women’s Washroom","Men’s Washroom"], datasets:[{ data:[1542,1394], backgroundColor:['#a855f7','#0ea5e9'], borderWidth:0, hoverOffset:4 }]},
+        options:{ responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{ legend:{display:false}, tooltip:b.tooltip } }
+      }));
+    }
+
+    function syncToggle(){
+      const dark = document.documentElement.classList.contains('dark');
+      const icon = document.getElementById('themeIcon');
+      const label = document.getElementById('themeLabel');
+      if (icon) icon.textContent = dark ? '☀️' : '🌙';
+      if (label) label.textContent = dark ? 'Light' : 'Dark';
+    }
+
+    document.getElementById('themeToggle')?.addEventListener('click', () => {
+      const dark = document.documentElement.classList.toggle('dark');
+      try { localStorage.setItem('theme', dark ? 'dark' : 'light'); } catch(e){}
+      syncToggle();
+      buildCharts();
+    });
+
+    syncToggle();
+    buildCharts();
+  </script>
+</body>
+</html>

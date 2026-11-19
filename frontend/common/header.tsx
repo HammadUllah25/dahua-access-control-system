@@ -4,6 +4,7 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 
 import { DeviceStatus } from "@/common/device-status";
+import { NotificationsMenu } from "@/common/notifications";
 import { ThemeToggle } from "@/common/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -44,6 +45,7 @@ function Header() {
           {meta.label}
         </Badge>
         <DeviceStatus />
+        <NotificationsMenu />
         {today ? (
           <p className="hidden font-mono text-xs text-muted-foreground sm:block">
             {today}

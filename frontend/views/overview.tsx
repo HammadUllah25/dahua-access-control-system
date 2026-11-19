@@ -14,15 +14,13 @@ import {
   XCircle,
 } from "lucide-react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Cell,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
-  Bar,
-  BarChart,
   Tooltip,
   XAxis,
   YAxis,
@@ -34,7 +32,10 @@ import { Panel } from "@/components/dashboard/panel";
 import { ResultBadge } from "@/components/dashboard/badges";
 import { AccessRhythm } from "@/components/overview/access-rhythm";
 import { DenialReasons } from "@/components/overview/denial-reasons";
+import { GenderEntries } from "@/components/overview/gender-entries";
+import { SensorAlertLogs } from "@/components/overview/sensor-alert-logs";
 import { StationMap } from "@/components/overview/station-map";
+import { StationSalesLine } from "@/components/overview/station-sales-line";
 import { Led } from "@/common/led";
 import { useSession } from "@/components/role-provider";
 import { ROLE_META, roleScopeLabel, stationsForRole } from "@/lib/roles";
@@ -50,8 +51,8 @@ import {
   ACCESS_EVENTS,
   ALERTS,
   DEVICE,
+  OUTLET_FOOTFALL,
   PEOPLE,
-  dailySeries,
   eventsForPrevRange,
   eventsForRange,
   fmtDay,
@@ -59,6 +60,7 @@ import {
   hourlyBuckets,
   pct,
   summarize,
+  type OutletFootfall,
   type RangeKey,
 } from "@/lib/station-data";
 
@@ -66,6 +68,88 @@ const GRID_STROKE = "var(--border)";
 const AXIS_FILL = "var(--muted-foreground)";
 const RED = "var(--led-red)";
 const ACCENT = "var(--chart-1)";
+
+function OutletTick(props: {
+  x?: number;
+  y?: number;
+  payload?: { index?: number; value?: string };
+}) {
+  const { x = 0, y = 0, payload } = props;
+  const item =
+    typeof payload?.index === "number"
+      ? OUTLET_FOOTFALL[payload.index]
+      : undefined;
+  const name = item?.outlet ?? payload?.value ?? "";
+  const region = item?.region ?? "";
+  const short = name.length > 16 ? `${name.slice(0, 15)}…` : name;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <title>
+        {name}
+        {item ? ` · ${item.city} · ${region}` : ""}
+      </title>
+      <text x={0} y={0} textAnchor="middle" fill={AXIS_FILL} fontSize={10}>
+        <tspan x={0} dy={12}>
+          {short}
+        </tspan>
+        <tspan x={0} dy={12} fontSize={9}>
+          {region}
+        </tspan>
+      </text>
+    </g>
+  );
+}
+
+function OutletTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload?: OutletFootfall }>;
+}) {
+  if (!active || !payload?.length) return null;
+  const item = payload[0]?.payload;
+  if (!item) return null;
+  const total = item.granted + item.denied;
+  return (
+    <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-popover-foreground">{item.outlet}</p>
+      <p className="text-muted-foreground">
+        {item.city} · {item.region}
+      </p>
+      <div className="mt-1.5 space-y-0.5">
+        <p className="flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block size-2 rounded-full"
+              style={{ backgroundColor: ACCENT }}
+            />
+            Granted
+          </span>
+          <span className="font-mono tabular-nums text-foreground">
+            {item.granted}
+          </span>
+        </p>
+        <p className="flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block size-2 rounded-full"
+              style={{ backgroundColor: RED }}
+            />
+            Denied
+          </span>
+          <span className="font-mono tabular-nums text-foreground">
+            {item.denied}
+          </span>
+        </p>
+        <p className="flex items-center justify-between gap-3 border-t border-border/60 pt-1 text-muted-foreground">
+          <span>Total</span>
+          <span className="font-mono tabular-nums text-foreground">{total}</span>
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function OverviewView() {
   const { role } = useSession();
@@ -78,7 +162,6 @@ function OverviewView() {
   const events = eventsForRange(ACCESS_EVENTS, range);
   const stats = summarize(events);
   const prev = summarize(eventsForPrevRange(ACCESS_EVENTS, range));
-  const series = dailySeries(events, range);
   const hourly = hourlyBuckets(events);
   const recent = events.slice(0, 8);
   const rangeLabel =
@@ -129,13 +212,12 @@ function OverviewView() {
       {/* system status banner */}
       <div
         role="status"
-        className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm ${
-          banner.tone === "green"
+        className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm ${banner.tone === "green"
             ? "border-led-green/25 bg-led-green/10"
             : banner.tone === "amber"
               ? "border-led-amber/25 bg-led-amber/10"
               : "border-led-red/25 bg-led-red/10"
-        }`}
+          }`}
       >
         <ShieldCheck aria-hidden className="size-4 shrink-0" />
         <span className="font-medium">{banner.label}</span>
@@ -199,20 +281,57 @@ function OverviewView() {
       {/* row 2: activity line + outcome donut */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel
-          title="Access activity"
-          description={`Granted and denied scans · ${rangeLabel}`}
+          title="Foot Fall"
+          description="Granted and denied scans by outlet · Central region"
           className="lg:col-span-2"
         >
-          <div className="h-64">
+          <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
-                <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="day" tick={{ fill: AXIS_FILL, fontSize: 11 }} tickLine={false} axisLine={{ stroke: GRID_STROKE }} />
-                <YAxis tick={{ fill: AXIS_FILL, fontSize: 11 }} tickLine={false} axisLine={false} width={40} allowDecimals={false} />
-                <Tooltip contentStyle={{ borderRadius: 8, borderColor: GRID_STROKE, fontSize: 12 }} />
-                <Line type="monotone" dataKey="granted" name="Granted" stroke={ACCENT} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                <Line type="monotone" dataKey="denied" name="Denied" stroke={RED} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-              </LineChart>
+              <BarChart
+                data={OUTLET_FOOTFALL}
+                margin={{ top: 8, right: 8, bottom: 52, left: -16 }}
+                barCategoryGap="18%"
+                barGap={2}
+              >
+                <CartesianGrid
+                  stroke={GRID_STROKE}
+                  strokeDasharray="3 3"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="outlet"
+                  tick={<OutletTick />}
+                  tickLine={false}
+                  axisLine={{ stroke: GRID_STROKE }}
+                  interval={0}
+                  height={60}
+                />
+                <YAxis
+                  tick={{ fill: AXIS_FILL, fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={40}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  content={<OutletTooltip />}
+                  cursor={{ fill: "var(--muted)", opacity: 0.35 }}
+                />
+                <Bar
+                  dataKey="granted"
+                  name="Granted"
+                  fill={ACCENT}
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={22}
+                />
+                <Bar
+                  dataKey="denied"
+                  name="Denied"
+                  fill={RED}
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={22}
+                />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </Panel>
@@ -268,6 +387,9 @@ function OverviewView() {
           </div>
         </Panel>
       </div>
+
+      {/* station total sales comparison (line graph, 8 stations) */}
+      <StationSalesLine />
 
       {/* station map sits beneath the access activity panels */}
       <StationMap />
@@ -341,6 +463,10 @@ function OverviewView() {
         <DenialReasons events={events} />
       </div>
 
+      {/* sensor alerts and gender-wise washroom entries */}
+      <SensorAlertLogs />
+      <GenderEntries />
+
       {/* recent activity */}
       <Panel
         title="Recent access activity"
@@ -351,14 +477,14 @@ function OverviewView() {
           </Link>
         }
       >
-        <Table>
+        <Table containerClassName="overflow-visible">
           <TableHeader>
             <TableRow>
-              <TableHead>Time</TableHead>
-              <TableHead>Person</TableHead>
-              <TableHead>Card</TableHead>
-              <TableHead>Result</TableHead>
-              <TableHead>Reason</TableHead>
+              <TableHead className="whitespace-normal">Time</TableHead>
+              <TableHead className="whitespace-normal">Person</TableHead>
+              <TableHead className="whitespace-normal">Card</TableHead>
+              <TableHead className="whitespace-normal">Result</TableHead>
+              <TableHead className="whitespace-normal">Reason</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -366,13 +492,15 @@ function OverviewView() {
               const person = PEOPLE.find((p) => p.id === e.personId);
               return (
                 <TableRow key={e.id}>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell className="whitespace-normal break-words font-mono text-xs">
                     {fmtDay(e.ts)} {fmtTime(e.ts)}
                   </TableCell>
-                  <TableCell>{person ? person.name : <span className="text-muted-foreground">Unresolved</span>}</TableCell>
-                  <TableCell className="font-mono text-xs">{e.maskedCard}</TableCell>
-                  <TableCell><ResultBadge result={e.result} /></TableCell>
-                  <TableCell className="text-muted-foreground">{e.reason ?? "—"}</TableCell>
+                  <TableCell className="whitespace-normal break-words">
+                    {person ? person.name : <span className="text-muted-foreground">Unresolved</span>}
+                  </TableCell>
+                  <TableCell className="whitespace-normal break-words font-mono text-xs">{e.maskedCard}</TableCell>
+                  <TableCell className="whitespace-normal"><ResultBadge result={e.result} /></TableCell>
+                  <TableCell className="whitespace-normal break-words text-muted-foreground">{e.reason ?? "—"}</TableCell>
                 </TableRow>
               );
             })}
