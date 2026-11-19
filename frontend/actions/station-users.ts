@@ -51,6 +51,15 @@ export type CreateStationUserPayload = {
   is_billable?: boolean | null;
 };
 
+export type UpdateStationUserPayload = {
+  name?: string;
+  phone?: string | null;
+  role_id?: number;
+  is_billable?: boolean | null;
+  clear_billable_override?: boolean;
+  is_active?: boolean;
+};
+
 export async function listStationRolesAction(
   stationId: number
 ): Promise<ActionResult<OperationalRoleRecord[]>> {
@@ -71,4 +80,18 @@ export async function createStationUserAction(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function updateStationUserAction(
+  stationId: number,
+  userId: number,
+  payload: UpdateStationUserPayload
+): Promise<ActionResult<StationUserRecord>> {
+  return backendRequest<StationUserRecord>(
+    `/stations/${stationId}/users/${userId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }
+  );
 }

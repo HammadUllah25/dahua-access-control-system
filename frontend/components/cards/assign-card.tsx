@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2, Nfc, RotateCcw } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   confirmCardEnrollmentAction,
   getCardEnrollmentAction,
@@ -35,6 +36,10 @@ function AssignCard({
   const [confirmed, setConfirmed] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [validFrom, setValidFrom] = useState(
+    () => new Date().toISOString().slice(0, 10)
+  );
+  const [validUntil, setValidUntil] = useState("2037-12-31");
 
   const start = async () => {
     setLoading(true);
@@ -88,6 +93,14 @@ function AssignCard({
 
   const confirm = async () => {
     if (!session?.card_number) return;
+    if (!validFrom || !validUntil) {
+      setError("Please select card validity dates.");
+      return;
+    }
+    if (validUntil < validFrom) {
+      setError("Valid until must be on or after valid from.");
+      return;
+    }
     setConfirming(true);
     setError(null);
     try {
@@ -99,8 +112,8 @@ function AssignCard({
           card_name: session.card_number,
           card_type: "general",
           is_valid: true,
-          valid_from: new Date().toISOString().slice(0, 10),
-          valid_until: "2037-12-31",
+          valid_from: validFrom,
+          valid_until: validUntil,
           door_indices: [0],
           time_section_indices: [0],
         }
@@ -190,6 +203,35 @@ function AssignCard({
               Waiting for a card scan…
             </p>
           ) : null}
+        </div>
+      ) : null}
+
+      {!confirmed ? (
+        <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2">
+          <label className="grid gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Valid from</span>
+            <Input
+              type="date"
+              value={validFrom}
+              onChange={(e) => setValidFrom(e.target.value)}
+              className="h-9 text-sm"
+              disabled={confirming}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Valid until</span>
+            <Input
+              type="date"
+              value={validUntil}
+              onChange={(e) => setValidUntil(e.target.value)}
+              min={validFrom || undefined}
+              className="h-9 text-sm"
+              disabled={confirming}
+            />
+          </label>
+          <p className="text-[11px] text-muted-foreground sm:col-span-2">
+            Card validity is written to the controller when you confirm.
+          </p>
         </div>
       ) : null}
 

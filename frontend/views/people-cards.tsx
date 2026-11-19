@@ -7,6 +7,7 @@ import {
   IdCard,
   Loader2,
   Nfc,
+  Pencil,
   Plus,
   Search,
   ShieldCheck,
@@ -49,12 +50,14 @@ import {
 } from "@/actions/get-devices";
 import {
   listStationsAction,
+  updateStationCardAction,
   type StationRecord,
 } from "@/actions/stations";
 import {
   createStationUserAction,
   listStationRolesAction,
   listStationUsersAction,
+  updateStationUserAction,
   type OperationalRoleRecord,
   type StationUserRecord,
 } from "@/actions/station-users";
@@ -131,6 +134,16 @@ function PeopleCardsView() {
   });
   const [saving, setSaving] = useState(false);
   const [cardUser, setCardUser] = useState<StationUserRecord | null>(null);
+  const [editUser, setEditUser] = useState<StationUserRecord | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    phone: "",
+    roleId: "",
+    isActive: true,
+    cardValidFrom: "",
+    cardValidUntil: "",
+  });
+  const [editSaving, setEditSaving] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   const loadBase = useCallback(async () => {
@@ -298,6 +311,70 @@ function PeopleCardsView() {
       setReloadKey((key) => key + 1);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openEdit = (user: StationUserRecord) => {
+    setEditUser(user);
+    setEditForm({
+      name: user.name,
+      phone: user.phone ?? "",
+      roleId: String(user.role.id),
+      isActive: user.is_active,
+      cardValidFrom: user.active_card?.valid_from ?? "",
+      cardValidUntil: user.active_card?.valid_until ?? "",
+    });
+  };
+
+  const saveEdit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedStation || !editUser || !editForm.roleId) return;
+    const name = editForm.name.trim();
+    if (!name) return;
+
+    const card = editUser.active_card;
+    const from = editForm.cardValidFrom;
+    const until = editForm.cardValidUntil;
+    if (card && from && until && until < from) {
+      toast.error("Card valid until must be on or after valid from.");
+      return;
+    }
+
+    setEditSaving(true);
+    try {
+      const res = await updateStationUserAction(selectedStation.id, editUser.id, {
+        name,
+        phone: editForm.phone.trim() || null,
+        role_id: Number(editForm.roleId),
+        is_active: editForm.isActive,
+      });
+      if (!res.success) {
+        toast.error(res.raw ?? res.error);
+        return;
+      }
+
+      if (card) {
+        const cardChanged =
+          from !== (card.valid_from ?? "") || until !== (card.valid_until ?? "");
+        if (cardChanged && from && until) {
+          const cardRes = await updateStationCardAction(
+            selectedStation.id,
+            card.station_card_assignment_id,
+            { valid_from: from, valid_until: until }
+          );
+          if (!cardRes.success) {
+            toast.error(cardRes.raw ?? cardRes.error ?? "User updated, but card validity could not be updated.");
+            setReloadKey((key) => key + 1);
+            return;
+          }
+        }
+      }
+
+      toast.success(`${res.data.name} updated.`);
+      setEditUser(null);
+      setReloadKey((key) => key + 1);
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -545,23 +622,36 @@ function PeopleCardsView() {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!canAssign}
-                      onClick={() => setCardUser(user)}
-                      title={
-                        card
-                          ? "This entry already has a card on record"
-                          : cardDevice
-                            ? "Scan and assign a card"
-                            : "Assign a controller to this station first"
-                      }
-                      className="disabled:cursor-not-allowed disabled:pointer-events-auto"
-                    >
-                      <Nfc aria-hidden />
-                      {card ? "Card assigned" : "Assign card"}
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openEdit(user)}
+                        disabled={!hasStation || usersLoading}
+                        title="Edit user"
+                        className="disabled:cursor-not-allowed disabled:pointer-events-auto"
+                      >
+                        <Pencil aria-hidden />
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!canAssign}
+                        onClick={() => setCardUser(user)}
+                        title={
+                          card
+                            ? "This entry already has a card on record"
+                            : cardDevice
+                              ? "Scan and assign a card"
+                              : "Assign a controller to this station first"
+                        }
+                        className="disabled:cursor-not-allowed disabled:pointer-events-auto"
+                      >
+                        <Nfc aria-hidden />
+                        {card ? "Card assigned" : "Assign card"}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -753,6 +843,123 @@ function PeopleCardsView() {
                   "Add profile"
                 ) : (
                   "Add access entry"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editUser !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditUser(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit user</DialogTitle>
+            <DialogDescription>
+              {editUser ? `${editUser.name} · ${selectedStation?.name ?? "Station"}` : "Update user details."}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveEdit} className="grid gap-4">
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Full name</span>
+              <Input
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                className="h-9 text-sm"
+                disabled={editSaving}
+                required
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Phone (optional)</span>
+              <Input
+                value={editForm.phone}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                placeholder="+92 300 1234567"
+                className="h-9 text-sm"
+                disabled={editSaving}
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Operational role</span>
+              <Select
+                value={editForm.roleId}
+                onValueChange={(value) => value && setEditForm({ ...editForm, roleId: value })}
+                disabled={editSaving || roles.length === 0}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map((role) => (
+                    <SelectItem key={role.id} value={String(role.id)}>
+                      {role.name} ({role.code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+            {editUser?.active_card ? (
+              <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-medium text-foreground">Card validity</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Card: <span className="font-mono">{editUser.active_card.card_number}</span>
+                  </p>
+                </div>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Valid from</span>
+                  <Input
+                    type="date"
+                    value={editForm.cardValidFrom}
+                    onChange={(e) => setEditForm({ ...editForm, cardValidFrom: e.target.value })}
+                    className="h-9 text-sm"
+                    disabled={editSaving}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Valid until</span>
+                  <Input
+                    type="date"
+                    value={editForm.cardValidUntil}
+                    onChange={(e) => setEditForm({ ...editForm, cardValidUntil: e.target.value })}
+                    min={editForm.cardValidFrom || undefined}
+                    className="h-9 text-sm"
+                    disabled={editSaving}
+                  />
+                </label>
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                No active card assigned. Card validity can be set when assigning a card.
+              </p>
+            )}
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={editForm.isActive}
+                onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })}
+                disabled={editSaving}
+                className="size-4 accent-primary"
+              />
+              <span>Active user</span>
+            </label>
+            <p className="text-[11px] text-muted-foreground">
+              Deactivate the card before deactivating a user with an active card.
+            </p>
+            <DialogFooter>
+              <Button type="submit" size="sm" disabled={editSaving || !editForm.name.trim() || !editForm.roleId}>
+                {editSaving ? (
+                  <>
+                    <Loader2 aria-hidden className="animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  "Save changes"
                 )}
               </Button>
             </DialogFooter>

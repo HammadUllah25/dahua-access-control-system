@@ -41,6 +41,33 @@ export async function createStationAction(
   });
 }
 
+export type UpdateStationCardPayload = {
+  valid_from?: string;
+  valid_until?: string;
+  card_name?: string;
+  is_valid?: boolean;
+  is_active?: boolean;
+  role?: "USER" | "STAFF";
+  card_type?: "general" | "vip" | "guest";
+  is_billable?: boolean | null;
+  door_indices?: number[];
+  time_section_indices?: number[];
+};
+
+export async function updateStationCardAction(
+  stationId: number,
+  assignmentId: number,
+  payload: UpdateStationCardPayload
+): Promise<ActionResult<Record<string, unknown>>> {
+  return backendRequest<Record<string, unknown>>(
+    `/stations/${stationId}/cards/${assignmentId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
 export async function assignDeviceToStationAction(
   stationId: number,
   deviceId: number
