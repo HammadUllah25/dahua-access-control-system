@@ -1,14 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Loader2, Nfc, Plus, Search } from "lucide-react";
+import {
+  CreditCard,
+  IdCard,
+  Loader2,
+  Nfc,
+  Plus,
+  Search,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import { toast } from "react-toastify";
 
 import { Panel } from "@/components/dashboard/panel";
 import { ToneBadge } from "@/components/dashboard/badges";
 import { AssignCard } from "@/components/cards/assign-card";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +59,57 @@ import {
   type StationUserRecord,
 } from "@/actions/station-users";
 
+type AccessKind = "profile" | "shared_staff" | "general" | "master";
+
+const ACCESS_TYPES: {
+  id: AccessKind;
+  title: string;
+  description: string;
+  icon: typeof Users;
+}[] = [
+  {
+    id: "profile",
+    title: "Individual profile",
+    description:
+      "Create a user profile. Staff can have their own card (or you can assign a card later).",
+    icon: IdCard,
+  },
+  {
+    id: "shared_staff",
+    title: "Shared staff card",
+    description:
+      "Single card for all staff. One shared access entry with one card assigned to it.",
+    icon: Users,
+  },
+  {
+    id: "general",
+    title: "General access card",
+    description:
+      "For walk-ins/general users who scan a general card without a personal profile.",
+    icon: CreditCard,
+  },
+  {
+    id: "master",
+    title: "Master card (area)",
+    description:
+      "General master card allocated to an area. Intended to work only within that area.",
+    icon: ShieldCheck,
+  },
+];
+
+function inferAccessKind(user: StationUserRecord): {
+  kind: AccessKind;
+  label: string;
+} {
+  const name = user.name.toLowerCase();
+  if (name.includes("master")) return { kind: "master", label: "Master card" };
+  if (name.includes("shared") || name.includes("all staff"))
+    return { kind: "shared_staff", label: "Shared staff" };
+  if (name.includes("general") || name.includes("walk-in") || name.includes("walk in"))
+    return { kind: "general", label: "General access" };
+  return { kind: "profile", label: "Individual profile" };
+}
+
 function PeopleCardsView() {
   const [stations, setStations] = useState<StationRecord[]>([]);
   const [devices, setDevices] = useState<DeviceListRecord[]>([]);
@@ -61,7 +122,13 @@ function PeopleCardsView() {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", roleId: "" });
+  const [accessKind, setAccessKind] = useState<AccessKind>("profile");
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    roleId: "",
+    area: "",
+  });
   const [saving, setSaving] = useState(false);
   const [cardUser, setCardUser] = useState<StationUserRecord | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -144,8 +211,18 @@ function PeopleCardsView() {
     stationDevices[0];
   const hasStation = Boolean(selectedStation);
   const canAddUser = hasStation && !usersLoading && roles.length > 0;
-  const preferredRole =
-    roles.find((role) => role.code === "CUSTOMER") ?? roles[0];
+
+  const preferredRole = useMemo(() => {
+    const byCode = (code: string) =>
+      roles.find((role) => role.code.toUpperCase() === code);
+    if (accessKind === "master" || accessKind === "general") {
+      return byCode("VISITOR") ?? byCode("CUSTOMER") ?? roles[0];
+    }
+    if (accessKind === "shared_staff") {
+      return byCode("STAFF") ?? byCode("EMPLOYEE") ?? byCode("CUSTOMER") ?? roles[0];
+    }
+    return byCode("STAFF") ?? byCode("CUSTOMER") ?? roles[0];
+  }, [roles, accessKind]);
 
   const q = query.trim().toLowerCase();
   const filtered = users.filter((user) => {
@@ -153,33 +230,61 @@ function PeopleCardsView() {
       return false;
     }
     if (!q) return true;
+    const access = inferAccessKind(user);
     return (
       user.name.toLowerCase().includes(q) ||
       (user.phone?.toLowerCase().includes(q) ?? false) ||
-      (user.active_card?.card_number.toLowerCase().includes(q) ?? false)
+      (user.active_card?.card_number.toLowerCase().includes(q) ?? false) ||
+      access.label.toLowerCase().includes(q)
     );
   });
 
   const activeCards = users.filter((user) => user.active_card).length;
-  const withoutCards = users.length - activeCards;
+  const profileCount = users.filter((u) => inferAccessKind(u).kind === "profile").length;
+  const sharedGeneralCount = users.length - profileCount;
 
   const openAdd = () => {
     if (!selectedStation) return;
+    setAccessKind("profile");
     setForm({
       name: "",
       phone: "",
       roleId: preferredRole ? String(preferredRole.id) : "",
+      area: "",
     });
     setAddOpen(true);
   };
 
+  useEffect(() => {
+    if (!addOpen) return;
+    const defaults: Record<AccessKind, string> = {
+      profile: "",
+      shared_staff: "All Staff - Shared Card",
+      general: "General Access Card",
+      master: "Master Card (Area)",
+    };
+    setForm((current) => ({
+      ...current,
+      name: accessKind === "profile" ? "" : defaults[accessKind],
+      area: accessKind === "master" ? current.area : "",
+      roleId: preferredRole ? String(preferredRole.id) : current.roleId,
+    }));
+  }, [accessKind, addOpen, preferredRole]);
+
   const createUser = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedStation || !form.name.trim() || !form.roleId) return;
+    if (!selectedStation || !form.roleId) return;
+    let name = form.name.trim();
+    if (accessKind === "master" && form.area.trim()) {
+      name = `Master Card - ${form.area.trim()}`;
+    }
+    if (!name) return;
+    if (accessKind === "profile" && !form.name.trim()) return;
+
     setSaving(true);
     try {
       const res = await createStationUserAction(selectedStation.id, {
-        name: form.name.trim(),
+        name,
         phone: form.phone.trim() || null,
         role_id: Number(form.roleId),
         is_billable: null,
@@ -196,6 +301,8 @@ function PeopleCardsView() {
     }
   };
 
+  const needsArea = accessKind === "master";
+
   return (
     <div className="flex flex-col gap-4 p-4 lg:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -204,12 +311,16 @@ function PeopleCardsView() {
             People &amp; cards
           </h2>
           <p className="text-xs text-muted-foreground">
-            Station people and the physical card credentials assigned to them
+            Manage user profiles and card access: individual, shared staff,
+            general, and area master cards
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {stations.length > 0 ? (
-            <Select value={stationId} onValueChange={(value) => value && setStationId(value)}>
+            <Select
+              value={stationId}
+              onValueChange={(value) => value && setStationId(value)}
+            >
               <SelectTrigger className="h-8 w-56">
                 <SelectValue placeholder="Select a station" />
               </SelectTrigger>
@@ -228,7 +339,7 @@ function PeopleCardsView() {
             disabled={!canAddUser}
             title={
               canAddUser
-                ? "Add a person to this station"
+                ? "Add a user profile or card access"
                 : !hasStation
                   ? "Create a station before adding people"
                   : usersLoading
@@ -238,7 +349,7 @@ function PeopleCardsView() {
             className="disabled:cursor-not-allowed disabled:pointer-events-auto"
           >
             <Plus aria-hidden />
-            Add user
+            Add user / card
           </Button>
         </div>
       </div>
@@ -268,10 +379,10 @@ function PeopleCardsView() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          ["Total people", users.length],
+          ["Profiles", profileCount],
+          ["Shared / general", sharedGeneralCount],
           ["Cards assigned", activeCards],
-          ["No card", withoutCards],
-          ["Roles", roles.length],
+          ["Without card", Math.max(users.length - activeCards, 0)],
         ].map(([label, value]) => (
           <div key={label} className="card-glow rounded-lg border bg-card px-3 py-2">
             <p className="text-xs text-muted-foreground">{label}</p>
@@ -280,12 +391,33 @@ function PeopleCardsView() {
         ))}
       </div>
 
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {ACCESS_TYPES.map((type) => {
+          const Icon = type.icon;
+          return (
+            <Card key={type.id} size="sm" className="h-full">
+              <CardContent className="flex gap-3 py-1">
+                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Icon aria-hidden className="size-4" />
+                </span>
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium leading-tight">{type.title}</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {type.description}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
       <Panel
-        title="Station directory"
+        title="Users & card access"
         description={
           selectedStation
-            ? `${selectedStation.name} · ${users.length} person(s)`
-            : "Select a station to see its people"
+            ? `${selectedStation.name} · ${users.length} entr${users.length === 1 ? "y" : "ies"}`
+            : "Select a station to manage users and cards"
         }
         action={
           baseLoading || usersLoading ? (
@@ -305,11 +437,14 @@ function PeopleCardsView() {
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name, phone or card number"
+              placeholder="Search name, type, phone or card number"
               className="h-8 pl-8 text-xs"
             />
           </div>
-          <Select value={roleFilter} onValueChange={(value) => value && setRoleFilter(value)}>
+          <Select
+            value={roleFilter}
+            onValueChange={(value) => value && setRoleFilter(value)}
+          >
             <SelectTrigger className="h-8 w-40">
               <SelectValue placeholder="All roles" />
             </SelectTrigger>
@@ -327,12 +462,13 @@ function PeopleCardsView() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Person</TableHead>
+              <TableHead>User / access</TableHead>
+              <TableHead>Type</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>Card</TableHead>
               <TableHead>Validity</TableHead>
-              <TableHead>Card status</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
@@ -340,6 +476,7 @@ function PeopleCardsView() {
             {filtered.map((user) => {
               const card = user.active_card;
               const canAssign = Boolean(cardDevice) && !card;
+              const access = inferAccessKind(user);
               return (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">
@@ -347,6 +484,19 @@ function PeopleCardsView() {
                     <span className="block font-mono text-[11px] text-muted-foreground">
                       #{user.id}
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    <ToneBadge
+                      tone={
+                        access.kind === "master"
+                          ? "amber"
+                          : access.kind === "general" || access.kind === "shared_staff"
+                            ? "blue"
+                            : "grey"
+                      }
+                    >
+                      {access.label}
+                    </ToneBadge>
                   </TableCell>
                   <TableCell>
                     <span className="text-xs font-medium">{user.role.name}</span>
@@ -402,7 +552,7 @@ function PeopleCardsView() {
                       onClick={() => setCardUser(user)}
                       title={
                         card
-                          ? "This person already has a card on record"
+                          ? "This entry already has a card on record"
                           : cardDevice
                             ? "Scan and assign a card"
                             : "Assign a controller to this station first"
@@ -421,88 +571,188 @@ function PeopleCardsView() {
         {!baseLoading && !usersLoading && filtered.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {hasStation
-              ? "No people match the current filters."
+              ? "No users or card access entries match the current filters."
               : "Create a station before adding people."}
           </p>
         ) : null}
       </Panel>
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Add user</DialogTitle>
+            <DialogTitle>Add user / card access</DialogTitle>
             <DialogDescription>
               {selectedStation
-                ? `${selectedStation.name} · this person is not a dashboard login.`
+                ? `${selectedStation.name} · create a profile or a shared/general/master card entry.`
                 : "Create a station first."}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={createUser} className="grid gap-3">
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">
-                Full name
-              </span>
-              <Input
-                value={form.name}
-                onChange={(event) =>
-                  setForm({ ...form, name: event.target.value })
-                }
-                placeholder="Full name"
-                className="h-8 text-xs"
-                disabled={saving}
-                required
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">
-                Phone (optional)
-              </span>
-              <Input
-                value={form.phone}
-                onChange={(event) =>
-                  setForm({ ...form, phone: event.target.value })
-                }
-                placeholder="+92 300 1234567"
-                className="h-8 text-xs"
-                disabled={saving}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">
-                Operational role
-              </span>
-              <Select
-                value={form.roleId}
-                onValueChange={(value) =>
-                  value && setForm({ ...form, roleId: value })
-                }
-                disabled={saving || roles.length === 0}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a role" />
-                </SelectTrigger>
-                <SelectContent>
-                  {roles.map((role) => (
-                    <SelectItem key={role.id} value={String(role.id)}>
-                      {role.name} ({role.code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
+          <form onSubmit={createUser} className="grid gap-4">
+            <div className="grid gap-2 sm:grid-cols-2">
+              {ACCESS_TYPES.map((type) => {
+                const Icon = type.icon;
+                const active = accessKind === type.id;
+                return (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => setAccessKind(type.id)}
+                    className={`flex items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
+                      active
+                        ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                        : "border-border hover:bg-muted/40"
+                    }`}
+                  >
+                    <span
+                      className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${
+                        active
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      <Icon aria-hidden className="size-4" />
+                    </span>
+                    <span className="space-y-0.5">
+                      <span className="block text-sm font-medium leading-tight">
+                        {type.title}
+                      </span>
+                      <span className="block text-xs leading-relaxed text-muted-foreground">
+                        {type.description}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1 sm:col-span-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {accessKind === "profile"
+                    ? "Full name"
+                    : accessKind === "master"
+                      ? "Area name (for master card)"
+                      : "Access name"}
+                </span>
+                {accessKind === "master" ? (
+                  <Input
+                    value={form.area}
+                    onChange={(event) =>
+                      setForm({ ...form, area: event.target.value })
+                    }
+                    placeholder="e.g. Area A / North Zone"
+                    className="h-9 text-sm"
+                    disabled={saving}
+                    required
+                  />
+                ) : (
+                  <Input
+                    value={form.name}
+                    onChange={(event) =>
+                      setForm({ ...form, name: event.target.value })
+                    }
+                    placeholder={
+                      accessKind === "profile"
+                        ? "Full name"
+                        : "Access/card name"
+                    }
+                    className="h-9 text-sm"
+                    disabled={saving}
+                    required={accessKind === "profile"}
+                  />
+                )}
+                {accessKind === "master" ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    Master card will be saved as an area-allocated general card
+                    entry (intended for use within this area only).
+                  </span>
+                ) : null}
+              </label>
+
+              {accessKind === "profile" ? (
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Phone (optional)
+                  </span>
+                  <Input
+                    value={form.phone}
+                    onChange={(event) =>
+                      setForm({ ...form, phone: event.target.value })
+                    }
+                    placeholder="+92 300 1234567"
+                    className="h-9 text-sm"
+                    disabled={saving}
+                  />
+                </label>
+              ) : (
+                <div className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Phone
+                  </span>
+                  <p className="flex h-9 items-center rounded-md border border-dashed px-3 text-xs text-muted-foreground">
+                    Not required for shared/general cards
+                  </p>
+                </div>
+              )}
+
+              <label className="grid gap-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Operational role
+                </span>
+                <Select
+                  value={form.roleId}
+                  onValueChange={(value) =>
+                    value && setForm({ ...form, roleId: value })
+                  }
+                  disabled={saving || roles.length === 0}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {roles.map((role) => (
+                      <SelectItem key={role.id} value={String(role.id)}>
+                        {role.name} ({role.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
+
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+              {accessKind === "profile"
+                ? "Individual profiles can have their own card. After adding the profile, assign a personal card to this user."
+                : accessKind === "shared_staff"
+                  ? "Create one shared entry for staff and assign a single card to it. This card can be used as the shared staff card."
+                  : accessKind === "general"
+                    ? "Create a general access entry for walk-in/general users and assign a general card to it (no personal profile required)."
+                    : "Create a master/general card entry allocated to an area. Assign the master card to this entry; it is intended for use within the allocated area only."}
+            </div>
+
             <DialogFooter>
               <Button
                 type="submit"
                 size="sm"
-                disabled={saving || !form.name.trim() || !form.roleId}
+                disabled={
+                  saving ||
+                  !form.roleId ||
+                  (accessKind === "profile"
+                    ? !form.name.trim()
+                    : accessKind === "master"
+                      ? !form.area.trim()
+                      : !form.name.trim())
+                }
               >
                 {saving ? (
                   <>
                     <Loader2 aria-hidden className="animate-spin" />
                     Adding…
                   </>
+                ) : accessKind === "profile" ? (
+                  "Add profile"
                 ) : (
-                  "Add user"
+                  "Add access entry"
                 )}
               </Button>
             </DialogFooter>

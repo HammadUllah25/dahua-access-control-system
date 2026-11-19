@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Bell,
   BellRing,
   Building2,
   CalendarClock,
@@ -39,6 +40,7 @@ export const NAV: NavGroup[] = [
       { title: "Overview", href: "/overview", icon: LayoutDashboard, roles: ALL },
       { title: "Live Monitoring", href: "/live", icon: Radio, roles: ALL },
       { title: "Access Logs", href: "/logs", icon: ScrollText, roles: ALL },
+      { title: "Notifications", href: "/notifications", icon: Bell, roles: ALL },
     ],
   },
   {
@@ -86,6 +88,7 @@ const TOGGLEABLE_PAGES = [
   "/schedules",
   "/add-device",
   "/alerts",
+  "/notifications",
   "/reports",
 ];
 

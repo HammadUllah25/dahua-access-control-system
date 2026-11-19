@@ -95,8 +95,8 @@ function StationMap() {
                   />
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-medium">{device.name}</p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="break-words text-xs font-medium leading-snug">{device.name}</p>
+                  <p className="break-words text-[11px] text-muted-foreground">
                     {device.location} · {device.model}
                   </p>
                   <p className={`text-[11px] font-medium ${tone.text}`}>
