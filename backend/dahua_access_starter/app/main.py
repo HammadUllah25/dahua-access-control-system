@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from pathlib import Path
 
+from app.api.remote_unlock import router as remote_unlock_router
 from app.api.devices import (
     router as devices_router,
     door_config_router as door_config_router,
@@ -66,6 +67,7 @@ app = FastAPI(
 )
 
 app.include_router(devices_router)
+app.include_router(remote_unlock_router)
 app.include_router(door_config_router)
 app.include_router(device_initialization_router)
 # Legacy People/IC Card and standalone Network routers are intentionally not mounted.

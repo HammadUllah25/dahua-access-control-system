@@ -94,6 +94,22 @@ class DeviceSessionManager:
                 self.sdk.stop_access_events(session.handle)
                 self.sdk.logout(session.handle)
 
+    def open_door(
+        self,
+        device: Device,
+        door_index: int = 0,
+        *,
+        operator_id: str = "ACCESS_API",
+    ) -> dict:
+        """Open a controller door while protecting its session from concurrent logout."""
+        with self._lock:
+            session = self.connect(device)
+            return self.sdk.open_access_door(
+                session.handle,
+                door_index=door_index,
+                operator_id=operator_id,
+            )
+
     def get_session(self, device_id: int) -> DeviceSession | None:
         with self._lock:
             return self._sessions.get(device_id)

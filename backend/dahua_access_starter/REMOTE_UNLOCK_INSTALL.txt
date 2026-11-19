@@ -1,0 +1,90 @@
+DAHUA REMOTE UNLOCK API - INSTALLATION
+======================================
+
+This is a surgical patch. It adds one new protected API route and a Dahua
+NetSDK remote-open operation. It does not replace or modify the database,
+.env file, device encryption key, card routes, inventory routes, access-event
+routes, or door-configuration routes.
+
+FILES TO REPLACE
+----------------
+Replace these three existing files in your project:
+
+1. app/main.py
+2. app/services/dahua_sdk.py
+3. app/services/device_sessions.py
+
+NEW FILE TO ADD
+---------------
+Copy this new file into the matching folder:
+
+4. app/api/remote_unlock.py
+
+IMPORTANT: Do not replace your .env, data/dahua_access.db, data/device_secret.key,
+.venv, vendor folder, or any other project files.
+
+CONFIGURE THE API KEY
+---------------------
+1. Generate a private key in PowerShell:
+
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+2. Open your EXISTING backend .env file and append this line, using the key
+   printed by the command:
+
+   REMOTE_UNLOCK_API_KEY=PASTE_YOUR_GENERATED_KEY_HERE
+
+   Do not remove or replace any existing .env settings.
+
+3. Restart FastAPI after saving .env.
+
+API ENDPOINT
+------------
+POST /devices/{device_id}/remote-unlock
+
+Example URL for your existing device:
+http://127.0.0.1:8000/devices/1/remote-unlock
+
+Required header:
+X-Unlock-API-Key: YOUR_GENERATED_KEY
+
+Example JSON body:
+{
+  "door_index": 0,
+  "operator_id": "ACCESS_API",
+  "reason": "MANUAL_TEST"
+}
+
+The door_index is zero-based. Your ASI1201E single-door controller is normally
+used with door_index 0, matching the existing door-config API.
+
+EXPECTED SUCCESS RESPONSE
+-------------------------
+The API returns success=true and status=command_accepted when Dahua NetSDK
+returns success for CtrlType.ACCESS_OPEN. This means the controller accepted
+the command; it does not independently prove that the physical door opened.
+Confirm physical operation and check the resulting access event during testing.
+
+ERRORS
+------
+401: missing or incorrect X-Unlock-API-Key.
+503: REMOTE_UNLOCK_API_KEY is not configured; remote unlock stays disabled.
+404: device ID does not exist.
+502: Dahua SDK unavailable, login failed, or controller rejected the command.
+422: invalid request fields.
+
+PAYMENT GATEWAY NOTE
+--------------------
+Do not let the customer's browser call this endpoint with a payment-success
+claim. Your backend must first verify the payment gateway's signed webhook,
+amount, order/reference, and payment status. Only then should trusted backend
+code invoke the unlock operation. Do not treat a client-supplied payment
+reference or reason as proof of payment.
+
+NETWORK NOTE
+------------
+The backend process must have a network path to the Dahua controller on its
+SDK port. A cloud-hosted backend cannot reach a controller behind an office
+router just because the controller is connected to the internet. Use a VPN or
+another authenticated private network path; do not expose the Dahua SDK port
+openly to the public internet.
