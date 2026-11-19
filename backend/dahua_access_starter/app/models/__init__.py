@@ -10,9 +10,10 @@ from app.models.device_sync_job import DeviceSyncJob
 from app.models.operational_role import OperationalRole
 from app.models.station_user import StationUser
 from app.models.user_card_assignment import UserCardAssignment
+from app.models.qr_access_grant import QRAccessGrant
 
 __all__ = [
     "Device", "Person", "AccessCard", "AccessEvent", "Station",
     "StationCardAssignment", "StationRate", "CashCollection", "DeviceSyncJob",
-    "OperationalRole", "StationUser", "UserCardAssignment",
+    "OperationalRole", "StationUser", "UserCardAssignment", "QRAccessGrant",
 ]

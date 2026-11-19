@@ -1,0 +1,134 @@
+CUSTOMER QR TEMPORARY ACCESS + UNIFIED REMOTE EVENT LOGGING
+==========================================================
+
+IMPLEMENTED BEHAVIOUR
+--------------------
+- Customer QR authorization expires after exactly 60 seconds.
+- Each QR authorization can be redeemed only once.
+- QR tokens are generated with cryptographically secure randomness; only SHA-256
+  token hashes are stored in the database.
+- The QR opens a small mobile web page. The customer taps "Unlock Door" to
+  redeem the one-time authorization. Scanning alone does not silently unlock.
+- Customer QR unlocks and administrator software unlocks are stored in the
+  existing access_events table and returned by GET /access-events.
+- RFID events remain in the same API and are tagged event_source=RFID.
+- Existing unrelated routes and existing data are retained. Database changes
+  are additive; do not delete or replace the database.
+
+FILES TO REPLACE
+----------------
+1. app/main.py
+2. app/core/config.py
+3. app/core/database.py
+4. app/models/__init__.py
+5. app/models/access_event.py
+6. app/api/access_events.py
+7. app/api/remote_unlock.py
+8. app/schemas/access_event.py
+9. app/services/access_event_service.py
+10. requirements.txt
+
+NEW FILES TO ADD
+----------------
+11. app/api/qr_access.py
+12. app/models/qr_access_grant.py
+13. app/services/remote_access_events.py
+
+INSTALLATION
+------------
+1. Stop FastAPI (Ctrl+C).
+2. Back up the listed Python files and your data/dahua_access.db.
+3. Extract this patch and copy its app folder into your existing
+   backend/dahua_access_starter/app folder, allowing the listed files to replace
+   their counterparts. Copy requirements.txt to the project root.
+4. Do NOT replace .env, data/dahua_access.db, data/device_secret.key, .venv,
+   vendor/, or other project files.
+5. Install the QR image dependency using the project's Python:
+
+   .\.venv\Scripts\python.exe -m pip install "qrcode[pil]>=7.4,<9.0"
+
+6. Keep your existing REMOTE_UNLOCK_API_KEY in .env. Add PUBLIC_API_BASE_URL.
+   For office phone testing, use the laptop's LAN IPv4 address, for example:
+
+   PUBLIC_API_BASE_URL=http://192.168.1.25:8000
+
+   Replace the example address with the laptop's actual IPv4 address from
+   ipconfig. A phone scanning the QR must be able to reach this address.
+   For production, set it to the public HTTPS API origin, e.g.
+   PUBLIC_API_BASE_URL=https://api.yourdomain.com
+
+7. Start the backend so phones on the office LAN can reach it. The current
+   run.bat binds only to 127.0.0.1, which is laptop-only. For this LAN test,
+   run this command instead:
+
+   .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+   Allow inbound TCP 8000 on the Windows Private network profile only. Do not
+   expose this development server directly to the public internet.
+
+API: CREATE / ROTATE CUSTOMER QR
+--------------------------------
+POST /stations/{station_id}/qr-access-sessions
+Header: X-Unlock-API-Key: <existing REMOTE_UNLOCK_API_KEY>
+Body:
+{
+  "device_id": 1,
+  "door_index": 0
+}
+
+If the station has exactly one device, device_id may be omitted. If it has
+multiple devices, device_id is required.
+
+Response includes:
+- qr_image_data_url: PNG data URL for the kiosk/display <img src="...">
+- qr_url: URL to show/encode in the QR
+- expires_in_seconds: 60
+- single_use: true
+
+The trusted station display should call this endpoint with the API key and
+refresh the QR every 60 seconds, or immediately after successful redemption.
+Never put REMOTE_UNLOCK_API_KEY in a public/customer browser.
+
+CUSTOMER SCAN FLOW
+------------------
+1. Customer scans the displayed QR.
+2. The phone opens /qr-access/claim?token=... on the backend.
+3. Customer taps "Unlock Door".
+4. The page posts the token to POST /qr-access/redeem.
+5. The backend atomically consumes the one-time token and calls Dahua NetSDK.
+
+The QR token is a bearer authorization. Anyone who scans it first can use it;
+therefore display it only at the intended door and rotate it every minute.
+The token is consumed even if the controller command fails, to prevent replay.
+A new QR must be generated for another attempt.
+
+UNIFIED EVENT API
+-----------------
+GET /access-events
+GET /access-events?event_source=REMOTE
+GET /access-events?event_source=REMOTE&user_type=CUSTOMER
+GET /access-events?event_source=REMOTE&user_type=ADMIN
+GET /access-events?event_source=RFID
+
+Remote unlock records contain event_source=REMOTE, event_type=REMOTE_UNLOCK,
+user_type=CUSTOMER or ADMIN, operator_id, reason, command_status, and
+physical_door_state_verified=false. RFID events remain in the same response
+and are tagged event_source=RFID when a card number is present.
+
+ADMIN REMOTE UNLOCK
+-------------------
+The existing endpoint remains:
+POST /devices/{device_id}/remote-unlock
+It continues to require X-Unlock-API-Key and now also writes an ADMIN remote
+unlock record to access_events. Keep this key server-side. For production,
+replace shared-key admin access with authenticated user/role authorization.
+
+IMPORTANT LIMITATIONS
+---------------------
+- command_accepted means Dahua NetSDK accepted the command; it does not prove
+  that the physical door moved. Physical confirmation requires a sensor/event.
+- This temporary QR flow intentionally has no payment gateway. It authorizes
+  anyone holding the current QR for one unlock. Do not use it as a paid-access
+  mechanism until verified payment webhook authorization is implemented.
+- The database migration runs additively at application startup. Do not delete
+  the database or run a destructive reset.

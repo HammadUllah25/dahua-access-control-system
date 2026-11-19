@@ -18,6 +18,14 @@ class AccessEventRead(BaseModel):
     is_billable: bool = False
     rate_applied: float | None = None
     currency: str = "PKR"
+    event_source: str = "DEVICE"
+    event_type: str = "DEVICE_EVENT"
+    user_type: str | None = None
+    operator_id: str | None = None
+    reason: str | None = None
+    payment_reference: str | None = None
+    command_status: str | None = None
+    physical_door_state_verified: bool | None = None
     alarm_type: int
     event_id: int | None
     sequence: int | None
