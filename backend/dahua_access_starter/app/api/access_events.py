@@ -20,6 +20,9 @@ def list_access_events(
     card_number: str | None = Query(default=None, max_length=32),
     station_id: int | None = Query(default=None, gt=0),
     card_role: str | None = Query(default=None, max_length=20, pattern=r"^[A-Za-z][A-Za-z0-9_]{0,19}$"),
+    event_source: str | None = Query(default=None, max_length=20),
+    event_type: str | None = Query(default=None, max_length=40),
+    user_type: str | None = Query(default=None, max_length=20),
     start_date: date | None = None,
     end_date: date | None = None,
     limit: int = Query(default=100, ge=1, le=500),
@@ -36,6 +39,12 @@ def list_access_events(
         query = query.filter(AccessEvent.station_id == station_id)
     if card_role:
         query = query.filter(AccessEvent.card_role == card_role.strip().upper())
+    if event_source:
+        query = query.filter(AccessEvent.event_source == event_source.strip().upper())
+    if event_type:
+        query = query.filter(AccessEvent.event_type == event_type.strip().upper())
+    if user_type:
+        query = query.filter(AccessEvent.user_type == user_type.strip().upper())
     if start_date and end_date and end_date < start_date:
         raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
     if start_date:

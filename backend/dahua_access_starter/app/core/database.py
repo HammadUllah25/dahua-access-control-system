@@ -211,3 +211,29 @@ def seed_operational_roles() -> None:
         db.commit()
     finally:
         db.close()
+
+
+def ensure_access_event_source_columns() -> None:
+    """Add unified RFID/remote-event metadata to existing access-event tables."""
+    inspector = inspect(engine)
+    if "access_events" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("access_events")}
+    additions = {
+        "event_source": "VARCHAR(20) NOT NULL DEFAULT 'DEVICE'",
+        "event_type": "VARCHAR(40) NOT NULL DEFAULT 'DEVICE_EVENT'",
+        "user_type": "VARCHAR(20) NULL",
+        "operator_id": "VARCHAR(80) NULL",
+        "reason": "VARCHAR(120) NULL",
+        "payment_reference": "VARCHAR(120) NULL",
+        "command_status": "VARCHAR(30) NULL",
+        "physical_door_state_verified": "BOOLEAN NULL",
+    }
+    with engine.begin() as connection:
+        for name, definition in additions.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE access_events ADD COLUMN {name} {definition}"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_access_events_event_source ON access_events (event_source)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_access_events_event_type ON access_events (event_type)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_access_events_user_type ON access_events (user_type)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_access_events_payment_reference ON access_events (payment_reference)"))

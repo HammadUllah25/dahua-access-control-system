@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.models.device import Device
 from app.services.dahua_sdk import DeviceLoginError, SDKUnavailableError
 from app.services.device_sessions import sessions
+from app.services.remote_access_events import record_remote_unlock_event
 
 logger = logging.getLogger(__name__)
 
@@ -73,24 +74,34 @@ def remote_unlock_device(
             operator_id=payload.operator_id,
         )
     except (SDKUnavailableError, DeviceLoginError) as exc:
+        record = record_remote_unlock_event(
+            db, device=device, door_index=payload.door_index, user_type="ADMIN",
+            operator_id=payload.operator_id, reason=payload.reason, command_status="failed", error=str(exc),
+        )
         logger.warning(
             "Remote unlock failed | device_id=%s | door_index=%s | reason=%s | error=%s",
-            device_id,
-            payload.door_index,
-            payload.reason,
-            exc,
+            device_id, payload.door_index, payload.reason, exc,
         )
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail={"message": str(exc), "event_id": record.id}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Unexpected remote unlock failure | device_id=%s", device_id)
+        record = record_remote_unlock_event(
+            db, device=device, door_index=payload.door_index, user_type="ADMIN",
+            operator_id=payload.operator_id, reason=payload.reason, command_status="failed", error=str(exc),
+        )
         raise HTTPException(
             status_code=502,
-            detail=f"Unexpected error while sending remote unlock command: {exc}",
+            detail={"message": f"Unexpected error while sending remote unlock command: {exc}", "event_id": record.id},
         ) from exc
 
     issued_at = datetime.now(timezone.utc).isoformat()
+    event = record_remote_unlock_event(
+        db, device=device, door_index=payload.door_index, user_type="ADMIN",
+        operator_id=payload.operator_id, reason=payload.reason, command_status="command_accepted",
+        sdk_result=result.get("sdk_result"),
+    )
     logger.info(
         "Remote unlock command accepted | device_id=%s | door_index=%s | operator_id=%s | reason=%s",
         device_id,
@@ -102,6 +113,10 @@ def remote_unlock_device(
     return {
         "success": True,
         "status": "command_accepted",
+        "event_id": event.id,
+        "event_source": "REMOTE",
+        "event_type": "REMOTE_UNLOCK",
+        "user_type": "ADMIN",
         "device_id": device_id,
         "device_name": device.name,
         "door_index": payload.door_index,

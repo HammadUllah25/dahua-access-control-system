@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 
 from app.api.remote_unlock import router as remote_unlock_router
+from app.api.qr_access import router as qr_access_router
 from app.api.devices import (
     router as devices_router,
     door_config_router as door_config_router,
@@ -25,6 +26,7 @@ from app.core.database import (
     ensure_device_identity_columns,
     ensure_station_platform_columns,
     ensure_station_user_event_columns,
+    ensure_access_event_source_columns,
     seed_operational_roles,
 )
 from app.models import (
@@ -45,6 +47,7 @@ async def lifespan(app: FastAPI):
     ensure_device_identity_columns()
     ensure_station_platform_columns()
     ensure_station_user_event_columns()
+    ensure_access_event_source_columns()
     seed_operational_roles()
     event_service.start()
     monitor.start()
@@ -68,6 +71,7 @@ app = FastAPI(
 
 app.include_router(devices_router)
 app.include_router(remote_unlock_router)
+app.include_router(qr_access_router)
 app.include_router(door_config_router)
 app.include_router(device_initialization_router)
 # Legacy People/IC Card and standalone Network routers are intentionally not mounted.

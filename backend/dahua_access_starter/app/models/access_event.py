@@ -39,6 +39,15 @@ class AccessEvent(Base):
     rate_applied: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="PKR", server_default="PKR")
     source_event_key: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True, index=True)
+    # Unified event classification: physical controller events and software-issued commands.
+    event_source: Mapped[str] = mapped_column(String(20), nullable=False, default="DEVICE", server_default="DEVICE", index=True)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False, default="DEVICE_EVENT", server_default="DEVICE_EVENT", index=True)
+    user_type: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    operator_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    command_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    physical_door_state_verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     alarm_type: Mapped[int] = mapped_column(Integer, nullable=False)
     event_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
