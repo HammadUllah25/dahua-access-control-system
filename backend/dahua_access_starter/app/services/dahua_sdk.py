@@ -812,6 +812,81 @@ class DahuaSDK:
             waittime=waittime,
         )
 
+    def open_access_door(
+        self,
+        login_handle: int,
+        door_index: int = 0,
+        *,
+        operator_id: str = "ACCESS_API",
+        waittime: int = 5000,
+    ) -> dict[str, Any]:
+        """Send Dahua's native remote door-open command.
+
+        The SDK return confirms that the controller accepted the command; it
+        does not independently prove the physical door moved to the open state.
+        ``door_index`` is zero-based, matching the existing door-config API.
+        """
+        if not login_handle:
+            raise DeviceLoginError("A valid Dahua login handle is required to unlock the door.")
+        if door_index < 0:
+            raise ValueError("door_index must be zero or greater.")
+
+        try:
+            from ctypes import sizeof
+            from NetSDK.SDK_Enum import (
+                CtrlType,
+                EM_OPEN_DOOR_TYPE,
+                EM_OPEN_DOOR_DIRECTION,
+                EM_REMOTE_CHECK_CODE,
+            )
+            from NetSDK.SDK_Struct import NET_CTRL_ACCESS_OPEN
+
+            operator_bytes = operator_id.encode("utf-8")
+            if len(operator_bytes) > 35:
+                raise ValueError("operator_id must be at most 35 UTF-8 bytes.")
+
+            command = NET_CTRL_ACCESS_OPEN()
+            command.dwSize = sizeof(NET_CTRL_ACCESS_OPEN)
+            command.nChannelID = int(door_index)
+            # A NULL target means the command is sent to this logged-in controller.
+            command.szUserID = b""
+            command.emOpenDoorType = int(EM_OPEN_DOOR_TYPE.EM_OPEN_DOOR_TYPE_REMOTE)
+            command.emOpenDoorDirection = int(
+                EM_OPEN_DOOR_DIRECTION.EM_OPEN_DOOR_DIRECTION_UNKNOWN
+            )
+            # This API command is issued only after the application authorizes it.
+            command.emRemoteCheckCode = int(
+                EM_REMOTE_CHECK_CODE.EM_REMOTE_CHECK_CODE_SUCCESS
+            )
+            command.szOperatorID = operator_bytes
+
+            result = self.client.ControlDevice(
+                int(login_handle),
+                CtrlType.ACCESS_OPEN,
+                command,
+                int(waittime),
+            )
+            sdk_result = self._as_int(result)
+            if sdk_result != 1:
+                error_message = self.client.GetLastErrorMessage()
+                raise DeviceLoginError(
+                    "Dahua remote door-open command failed: "
+                    f"{error_message} (SDK result={sdk_result})."
+                )
+
+            return {
+                "sdk_result": sdk_result,
+                "sdk_command": "CtrlType.ACCESS_OPEN",
+                "door_index": int(door_index),
+                "operator_id": operator_id,
+            }
+        except (SDKUnavailableError, DeviceLoginError, ValueError):
+            raise
+        except Exception as exc:
+            raise DeviceLoginError(
+                f"Could not send Dahua remote door-open command: {exc}"
+            ) from exc
+
     def logout(self, handle: int) -> None:
         if not self._initialized or self._client is None or not handle:
             return
