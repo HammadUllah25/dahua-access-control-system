@@ -22,7 +22,7 @@ function washroomBadge(washroom: "Women’s Washroom" | "Men’s Washroom") {
   const women = washroom === "Women’s Washroom";
   return (
     <span
-      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium"
+      className="inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium"
       style={{
         color: women ? WOMEN : MEN,
         borderColor: `color-mix(in oklab, ${women ? WOMEN : MEN} 30%, transparent)`,
@@ -48,7 +48,7 @@ export function GenderEntries() {
   ];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid gap-4 lg:grid-cols-4">
       <Panel
         title="Washroom Entries (Gender-wise)"
         description="Women’s and men’s washroom entries shown separately"
@@ -62,7 +62,7 @@ export function GenderEntries() {
             </span>
           </div>
         }
-        className="card-glow lg:col-span-2"
+        className="card-glow lg:col-span-3"
       >
         <Table containerClassName="overflow-visible">
           <TableHeader>
@@ -73,7 +73,6 @@ export function GenderEntries() {
               <TableHead className="whitespace-normal">Person / Type</TableHead>
               <TableHead className="whitespace-normal">Card</TableHead>
               <TableHead className="whitespace-normal">Result</TableHead>
-              <TableHead className="whitespace-normal">Note</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -81,13 +80,12 @@ export function GenderEntries() {
               <TableRow key={e.id}>
                 <TableCell className="whitespace-normal font-mono text-xs">{e.ts}</TableCell>
                 <TableCell className="whitespace-normal break-words">{e.station}</TableCell>
-                <TableCell className="whitespace-normal">{washroomBadge(e.washroom)}</TableCell>
+                <TableCell className="whitespace-nowrap">{washroomBadge(e.washroom)}</TableCell>
                 <TableCell className="whitespace-normal break-words">
                   {e.person} <span className="text-xs text-muted-foreground">({e.personType})</span>
                 </TableCell>
                 <TableCell className="whitespace-normal font-mono text-xs">{e.card}</TableCell>
                 <TableCell className="whitespace-normal">{resultBadge(e.result)}</TableCell>
-                <TableCell className="whitespace-normal break-words text-xs text-muted-foreground">{e.note}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -103,7 +101,7 @@ export function GenderEntries() {
           <div className="relative mt-1 h-52 w-full max-w-[240px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={data} dataKey="value" innerRadius={58} outerRadius={82} startAngle={90} endAngle={-270} strokeWidth={0}>
+                <Pie data={data} dataKey="value" innerRadius="68%" outerRadius="95%" startAngle={90} endAngle={-270} strokeWidth={0}>
                   {data.map((d) => <Cell key={d.name} fill={d.color} />)}
                 </Pie>
                 <Tooltip contentStyle={{ borderRadius: 8, borderColor: GRID, fontSize: 12 }} />
