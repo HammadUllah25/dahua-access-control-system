@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from pathlib import Path
 
 from app.api.remote_unlock import router as remote_unlock_router
@@ -16,7 +16,8 @@ from app.api.access_events import router as access_events_router
 from app.api.realtime import router as realtime_router
 from app.api.stations import router as stations_router
 from app.api.station_users import router as station_users_router
-from app.core.config import APP_NAME
+from app.api.payments import router as payments_router
+from app.core.config import APP_NAME, PAYMENT_ENTRY_FEE_MINOR, KIOSK_LOCAL_SIMULATOR_ENABLED, SAFEPAY_ENV
 from app.core.database import (
     Base,
     engine,
@@ -36,6 +37,7 @@ from app.models import (
 from app.services.access_event_service import event_service
 from app.services.device_sessions import sessions
 from app.services.device_monitor import monitor
+from app.services.kiosk_access import require_kiosk_page_access
 
 
 @asynccontextmanager
@@ -80,6 +82,7 @@ app.include_router(access_events_router)
 app.include_router(realtime_router)
 app.include_router(stations_router)
 app.include_router(station_users_router)
+app.include_router(payments_router)
 
 
 @app.get("/health", tags=["System"])
@@ -112,3 +115,19 @@ _DASHBOARD_FILE = Path(__file__).resolve().parent / "static" / "dashboard.html"
 @app.get("/dashboard-ui", include_in_schema=False)
 def dashboard_ui():
     return FileResponse(_DASHBOARD_FILE)
+
+
+_KIOSK_FILE = Path(__file__).resolve().parent / "static" / "kiosk.html"
+
+
+@app.get("/kiosk/{station_id}", response_class=HTMLResponse, include_in_schema=False)
+def kiosk_ui(station_id: int, request: Request):
+    """Serve the public, LAN-restricted customer payment kiosk."""
+    require_kiosk_page_access(request, station_id)
+    if not _KIOSK_FILE.is_file():
+        return HTMLResponse("Kiosk interface file is missing.", status_code=500)
+    html = _KIOSK_FILE.read_text(encoding="utf-8")
+    html = html.replace("__KIOSK_ENTRY_FEE__", f"{PAYMENT_ENTRY_FEE_MINOR / 100:.2f}")
+    html = html.replace("__KIOSK_STATION_ID__", str(station_id))
+    html = html.replace("__LOCAL_SIMULATOR_ENABLED__", "true" if KIOSK_LOCAL_SIMULATOR_ENABLED and SAFEPAY_ENV == "sandbox" else "false")
+    return HTMLResponse(html)

@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10233f">
+  <title>Washroom Access | Payment Kiosk</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy: #10233f;
+      --navy-2: #1d3557;
+      --red: #e63946;
+      --green: #16834a;
+      --muted: #667085;
+      --line: #e5eaf0;
+      --surface: #f4f7fb;
+      --white: #fff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { min-height: 100vh; background: radial-gradient(circle at 50% 0%, #eaf0f8 0, #f5f7fa 48%, #edf1f6 100%); color: var(--navy); display: flex; flex-direction: column; }
+    .topbar { height: 68px; padding: 0 clamp(18px, 4vw, 54px); display: flex; align-items: center; justify-content: space-between; background: var(--navy); color: var(--white); }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 750; letter-spacing: .01em; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: var(--red); font-weight: 900; }
+    .mode { border: 1px solid rgba(255,255,255,.26); border-radius: 999px; padding: 7px 12px; font-size: 11px; font-weight: 750; letter-spacing: .12em; color: #e8eff8; }
+    main { width: min(100% - 28px, 900px); margin: auto; padding: 34px 0 42px; flex: 1; display: flex; align-items: center; justify-content: center; }
+    .panel { width: 100%; max-width: 680px; padding: clamp(26px, 5vw, 52px); background: var(--white); border: 1px solid rgba(16,35,63,.08); border-radius: 26px; box-shadow: 0 22px 70px rgba(16,35,63,.10); text-align: center; }
+    .eyebrow { margin: 0 0 12px; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(30px, 5vw, 46px); line-height: 1.08; letter-spacing: -.04em; color: var(--navy); }
+    .subheading { margin: 14px auto 0; max-width: 490px; color: var(--muted); font-size: clamp(15px, 2vw, 18px); line-height: 1.55; }
+    .price { margin: 28px 0 6px; font-size: clamp(42px, 7vw, 64px); line-height: 1; letter-spacing: -.055em; font-weight: 850; color: var(--navy-2); }
+    .price-caption { margin: 0; font-size: 13px; color: var(--muted); }
+    .primary { min-height: 58px; width: min(100%, 390px); margin: 32px auto 0; padding: 15px 24px; display: inline-flex; justify-content: center; align-items: center; gap: 10px; border: 0; border-radius: 14px; background: var(--red); color: white; font-size: 17px; font-weight: 800; cursor: pointer; box-shadow: 0 8px 18px rgba(230,57,70,.22); transition: transform .15s ease, opacity .15s ease; }
+    .primary:hover:not(:disabled) { transform: translateY(-1px); }
+    .primary:disabled { opacity: .55; cursor: wait; box-shadow: none; }
+    .secondary { min-height: 48px; margin: 18px auto 0; padding: 12px 20px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--navy); font-weight: 750; cursor: pointer; }
+    .qr-layout { display: grid; grid-template-columns: minmax(220px, 300px) minmax(180px, 1fr); align-items: center; gap: clamp(20px, 4vw, 42px); margin: 28px auto 0; max-width: 570px; text-align: left; }
+    .qr-frame { padding: 15px; border: 1px solid var(--line); border-radius: 20px; background: white; box-shadow: 0 8px 24px rgba(16,35,63,.06); }
+    .qr-frame img { width: 100%; display: block; image-rendering: pixelated; }
+    .qr-copy h2 { margin: 0 0 10px; font-size: 23px; letter-spacing: -.025em; }
+    .qr-copy p { color: var(--muted); line-height: 1.55; font-size: 14px; margin: 0 0 14px; }
+    .timer { display: inline-flex; align-items: center; gap: 7px; background: var(--surface); border-radius: 999px; padding: 9px 12px; font-size: 13px; font-weight: 750; color: var(--navy-2); }
+    .status { margin: 25px auto 0; min-height: 50px; max-width: 570px; display: flex; align-items: center; justify-content: center; gap: 10px; border-radius: 13px; padding: 13px 16px; background: var(--surface); color: var(--navy-2); font-size: 14px; font-weight: 650; line-height: 1.45; }
+    .dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: #e0a126; box-shadow: 0 0 0 4px rgba(224,161,38,.13); }
+    .status.success { background: #eaf7ef; color: #126b3b; }
+    .status.success .dot { background: var(--green); box-shadow: 0 0 0 4px rgba(22,131,74,.12); }
+    .status.error { background: #fff0f0; color: #a52b35; }
+    .status.error .dot { background: var(--red); box-shadow: 0 0 0 4px rgba(230,57,70,.12); }
+    .sandbox-note { max-width: 570px; margin: 16px auto 0; padding: 12px 14px; border: 1px solid #f0d9a4; border-radius: 12px; background: #fff9e9; color: #795618; text-align: left; font-size: 12px; line-height: 1.55; }
+    .hidden { display: none !important; }
+    .success-icon { width: 82px; height: 82px; margin: 0 auto 20px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--green); font-size: 42px; font-weight: 900; box-shadow: 0 10px 25px rgba(22,131,74,.18); }
+    .failure-icon { width: 82px; height: 82px; margin: 0 auto 20px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--red); font-size: 38px; font-weight: 900; }
+    .footer { padding: 0 20px 20px; text-align: center; color: #8792a2; font-size: 11px; }
+    @media (max-width: 620px) {
+      .topbar { height: 58px; }
+      .qr-layout { grid-template-columns: minmax(0, 1fr); max-width: 330px; text-align: center; }
+      .qr-frame { max-width: 290px; margin: 0 auto; }
+      .qr-copy h2 { font-size: 20px; }
+      .timer { margin: 0 auto; }
+      .panel { border-radius: 20px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">W</span><span>SMART WASHROOM ACCESS</span></div>
+    <span class="mode" id="modeBadge">PAYMENT KIOSK</span>
+  </header>
+
+  <main>
+    <section class="panel" aria-live="polite">
+      <section id="welcomeView">
+        <p class="eyebrow">Welcome</p>
+        <h1>Quick, secure washroom access</h1>
+        <p class="subheading">Pay once using your mobile banking app. The entrance unlocks automatically after payment is confirmed.</p>
+        <div class="price">PKR __KIOSK_ENTRY_FEE__</div>
+        <p class="price-caption">One-time entry fee</p>
+        <button class="primary" id="startButton" type="button">Pay &amp; continue <span aria-hidden="true">→</span></button>
+        <button class="secondary hidden" id="localSimButton" type="button">LOCAL TEST: Simulate payment &amp; unlock</button>
+        <div class="status" id="welcomeStatus"><span class="dot"></span><span>Ready when you are.</span></div>
+      </section>
+
+      <section id="paymentView" class="hidden">
+        <p class="eyebrow">Secure payment</p>
+        <h1>Scan to pay</h1>
+        <p class="subheading">Open your supported mobile banking app and scan this Safepay Raast QR code.</p>
+        <div class="qr-layout">
+          <div class="qr-frame"><img id="paymentQr" alt="Safepay Raast payment QR code"></div>
+          <div class="qr-copy">
+            <h2>PKR __KIOSK_ENTRY_FEE__</h2>
+            <p>Confirm the payment in your banking app. Keep this screen open while we verify it.</p>
+            <div class="timer">⏱ <span id="countdown">05:00</span> remaining</div>
+          </div>
+        </div>
+        <div class="status" id="paymentStatus"><span class="dot"></span><span>Waiting for payment confirmation…</span></div>
+        <div id="sandboxNote" class="sandbox-note hidden"><strong>Sandbox test mode:</strong> Safepay's simulated Raast QR cannot be paid from a real banking app. Use the protected sandbox simulator from the backend's Swagger page to test the Dahua unlock. No real payment is collected.</div>
+        <button class="secondary hidden" id="retryButton" type="button">Generate a new QR</button>
+      </section>
+
+      <section id="successView" class="hidden">
+        <div class="success-icon" aria-hidden="true">✓</div>
+        <p class="eyebrow">Payment confirmed</p>
+        <h1>You're all set</h1>
+        <p class="subheading" id="successMessage">Payment received. The door unlock command has been accepted. Please enter.</p>
+        <div class="status success"><span class="dot"></span><span id="successSubtext">Please proceed through the entrance.</span></div>
+      </section>
+
+      <section id="problemView" class="hidden">
+        <div class="failure-icon" aria-hidden="true">!</div>
+        <p class="eyebrow">Entry needs assistance</p>
+        <h1 id="problemTitle">Please contact the attendant</h1>
+        <p class="subheading" id="problemMessage">Your payment may have been received, but the door controller did not confirm the unlock command. Do not pay again.</p>
+        <button class="secondary" id="problemReturnButton" type="button">Return to welcome screen</button>
+      </section>
+    </section>
+  </main>
+
+  <footer class="footer">Station __KIOSK_STATION_ID__ · Secure payment processing</footer>
+
+  <script>
+    (() => {
+      'use strict';
+      const STATION_ID = Number('__KIOSK_STATION_ID__');
+      const STORAGE_KEY = 'dahua_kiosk_payment_' + STATION_ID;
+      const LOCAL_SIMULATOR_ENABLED = '__LOCAL_SIMULATOR_ENABLED__' === 'true';
+      const $ = (id) => document.getElementById(id);
+      const views = ['welcomeView', 'paymentView', 'successView', 'problemView'];
+      let activePayment = null;
+      let pollHandle = null;
+      let countdownHandle = null;
+      let pollInFlight = false;
+      let successResetHandle = null;
+
+      function showView(name) {
+        views.forEach((id) => $(id).classList.toggle('hidden', id !== name));
+      }
+
+      function setStatus(element, message, tone = '') {
+        element.className = 'status' + (tone ? ' ' + tone : '');
+        element.replaceChildren();
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        const text = document.createElement('span');
+        text.textContent = message;
+        element.append(dot, text);
+      }
+
+      function stopTimers() {
+        if (pollHandle) clearInterval(pollHandle);
+        if (countdownHandle) clearInterval(countdownHandle);
+        if (successResetHandle) clearTimeout(successResetHandle);
+        pollHandle = null;
+        countdownHandle = null;
+        successResetHandle = null;
+        pollInFlight = false;
+      }
+
+      function clearStoredPayment() {
+        sessionStorage.removeItem(STORAGE_KEY);
+        activePayment = null;
+      }
+
+      function returnToWelcome() {
+        stopTimers();
+        clearStoredPayment();
+        $('startButton').disabled = false;
+        setStatus($('welcomeStatus'), 'Ready when you are.');
+        showView('welcomeView');
+      }
+
+      function showProblem(title, message, paymentWasReceived = false) {
+        stopTimers();
+        $('problemTitle').textContent = title;
+        $('problemMessage').textContent = message;
+        $('problemReturnButton').textContent = paymentWasReceived ? 'Please contact attendant' : 'Return to welcome screen';
+        $('problemReturnButton').disabled = paymentWasReceived;
+        $('problemReturnButton').onclick = paymentWasReceived ? null : returnToWelcome;
+        showView('problemView');
+      }
+
+      function startCountdown(expiresAt) {
+        const expiry = new Date(expiresAt).getTime();
+        const render = () => {
+          const seconds = Math.max(0, Math.ceil((expiry - Date.now()) / 1000));
+          $('countdown').textContent = String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0');
+          if (seconds <= 0) {
+            $('countdown').textContent = '00:00';
+          }
+        };
+        render();
+        if (countdownHandle) clearInterval(countdownHandle);
+        countdownHandle = setInterval(render, 1000);
+      }
+
+      async function readError(response) {
+        let body = {};
+        try { body = await response.json(); } catch (_) {}
+        const detail = body.detail;
+        if (typeof detail === 'string') return detail;
+        return 'The payment service returned HTTP ' + response.status + '.';
+      }
+
+      async function createPayment() {
+        stopTimers();
+        clearStoredPayment();
+        $('startButton').disabled = true;
+        setStatus($('welcomeStatus'), 'Creating your secure payment QR…');
+        try {
+          const response = await fetch('/stations/' + STATION_ID + '/payments/raast-qr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+          });
+          if (!response.ok) throw new Error(await readError(response));
+          const data = await response.json();
+          activePayment = {
+            payment_id: data.payment_id,
+            status_token: data.status_token,
+            expires_at: data.expires_at,
+            qr_image_data_url: data.qr_image_data_url,
+            sandbox: Boolean(data.sandbox)
+          };
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(activePayment));
+          $('paymentQr').src = data.qr_image_data_url;
+          $('sandboxNote').classList.toggle('hidden', !activePayment.sandbox);
+          $('retryButton').classList.add('hidden');
+          $('modeBadge').textContent = activePayment.sandbox ? 'SANDBOX MODE' : 'LIVE PAYMENT';
+          setStatus($('paymentStatus'), 'Waiting for payment confirmation…');
+          showView('paymentView');
+          startCountdown(data.expires_at);
+          await checkPaymentStatus();
+          if (activePayment) pollHandle = setInterval(checkPaymentStatus, 3000);
+        } catch (error) {
+          $('startButton').disabled = false;
+          setStatus($('welcomeStatus'), error.message || 'Unable to create payment QR.', 'error');
+        }
+      }
+
+      async function runLocalSimulation() {
+        if (!LOCAL_SIMULATOR_ENABLED) return;
+        stopTimers();
+        clearStoredPayment();
+        $('localSimButton').disabled = true;
+        $('startButton').disabled = true;
+        setStatus($('welcomeStatus'), 'Creating a local test payment and sending the Dahua unlock command…');
+        try {
+          const response = await fetch('/stations/' + STATION_ID + '/payments/local-simulate', { method: 'POST', cache: 'no-store' });
+          if (!response.ok) throw new Error(await readError(response));
+          const data = await response.json();
+          activePayment = { payment_id: data.payment_id, status_token: data.status_token, expires_at: data.expires_at, sandbox: true, local_test: true };
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(activePayment));
+          $('modeBadge').textContent = 'LOCAL TEST — NO PAYMENT';
+          showView('paymentView');
+          $('paymentQr').classList.add('hidden');
+          $('paymentQr').alt = 'No payment QR: local simulator is testing the unlock workflow';
+          $('sandboxNote').classList.remove('hidden');
+          setStatus($('paymentStatus'), 'Local test payment created. Checking unlock result…');
+          await checkPaymentStatus();
+          if (activePayment) pollHandle = setInterval(checkPaymentStatus, 1500);
+        } catch (error) {
+          $('startButton').disabled = false;
+          setStatus($('welcomeStatus'), error.message || 'Local simulation failed.', 'error');
+        } finally {
+          $('localSimButton').disabled = false;
+        }
+      }
+
+      async function checkPaymentStatus() {
+        if (!activePayment || pollInFlight) return;
+        pollInFlight = true;
+        try {
+          const response = await fetch('/payments/' + encodeURIComponent(activePayment.payment_id) + '/status', {
+            method: 'GET',
+            cache: 'no-store',
+            headers: { 'X-Payment-Access-Token': activePayment.status_token }
+          });
+          if (!response.ok) {
+            if (response.status === 401 || response.status === 404) {
+              showProblem('Payment session unavailable', 'This payment session is no longer available. Please contact the attendant before paying again.', true);
+              return;
+            }
+            setStatus($('paymentStatus'), 'Still checking with Safepay. Please keep this screen open.');
+            return;
+          }
+          const data = await response.json();
+          const paymentStatus = String(data.payment_status || '').toUpperCase();
+          const unlockStatus = String(data.unlock_status || '').toUpperCase();
+
+          if ((paymentStatus === 'PAID' || paymentStatus === 'PAID_TEST') && unlockStatus === 'COMMAND_ACCEPTED') {
+            stopTimers();
+            clearStoredPayment();
+            $('successMessage').textContent = paymentStatus === 'PAID_TEST'
+              ? 'Local test completed and the Dahua controller accepted the unlock command. No real payment was collected.'
+              : 'Payment confirmed. The Dahua controller accepted the unlock command. Please enter.';
+            $('successSubtext').textContent = paymentStatus === 'PAID_TEST'
+              ? 'LOCAL TEST ONLY — Safepay was not contacted and no money was collected.'
+              : 'Please proceed through the entrance.';
+            showView('successView');
+            successResetHandle = setTimeout(returnToWelcome, 9000);
+            return;
+          }
+
+          if ((paymentStatus === 'PAID' || paymentStatus === 'PAID_TEST') && unlockStatus === 'FAILED') {
+            showProblem('Payment received — door needs assistance', 'Your payment is recorded, but the door controller could not unlock. Do not pay again. Please contact the attendant.', true);
+            return;
+          }
+
+          if (paymentStatus === 'FAILED' || paymentStatus === 'EXPIRED' || paymentStatus === 'REFUNDED') {
+            stopTimers();
+            clearStoredPayment();
+            setStatus($('paymentStatus'), 'Payment ' + paymentStatus.toLowerCase() + '. You can generate a new QR.', 'error');
+            $('retryButton').classList.remove('hidden');
+            return;
+          }
+
+          if (paymentStatus === 'PAID' || paymentStatus === 'PAID_TEST') {
+            setStatus($('paymentStatus'), 'Payment received. Sending the door unlock command…');
+          } else {
+            setStatus($('paymentStatus'), 'Waiting for payment confirmation…');
+          }
+        } catch (_) {
+          setStatus($('paymentStatus'), 'Network interruption. Retrying payment verification…');
+        } finally {
+          pollInFlight = false;
+        }
+      }
+
+      function resumePayment() {
+        try {
+          const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null');
+          if (!saved || !saved.payment_id || !saved.status_token || !saved.expires_at) return false;
+          activePayment = saved;
+          $('paymentQr').src = saved.qr_image_data_url || '';
+          $('paymentQr').classList.remove('hidden');
+          $('sandboxNote').classList.toggle('hidden', !saved.sandbox);
+          $('retryButton').classList.add('hidden');
+          $('modeBadge').textContent = saved.sandbox ? 'SANDBOX MODE' : 'LIVE PAYMENT';
+          setStatus($('paymentStatus'), 'Resuming payment verification. Do not create another payment yet.');
+          showView('paymentView');
+          startCountdown(saved.expires_at);
+          checkPaymentStatus();
+          pollHandle = setInterval(checkPaymentStatus, 3000);
+          return true;
+        } catch (_) {
+          sessionStorage.removeItem(STORAGE_KEY);
+          return false;
+        }
+      }
+
+      $('startButton').addEventListener('click', createPayment);
+      $('localSimButton').addEventListener('click', runLocalSimulation);
+      $('localSimButton').classList.toggle('hidden', !LOCAL_SIMULATOR_ENABLED);
+      $('retryButton').addEventListener('click', createPayment);
+      if (!resumePayment()) {
+        $('modeBadge').textContent = 'PAYMENT KIOSK';
+        showView('welcomeView');
+      }
+    })();
+  </script>
+</body>
+</html>

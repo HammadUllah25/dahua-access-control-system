@@ -15,5 +15,7 @@ from app.models.qr_access_grant import QRAccessGrant
 __all__ = [
     "Device", "Person", "AccessCard", "AccessEvent", "Station",
     "StationCardAssignment", "StationRate", "CashCollection", "DeviceSyncJob",
-    "OperationalRole", "StationUser", "UserCardAssignment", "QRAccessGrant",
+    "OperationalRole", "StationUser", "UserCardAssignment", "QRAccessGrant", "PaymentTransaction",
 ]
+
+from app.models.payment_transaction import PaymentTransaction
