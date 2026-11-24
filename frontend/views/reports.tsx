@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import {
   Bar,
@@ -13,6 +13,16 @@ import {
   YAxis,
 } from "recharts";
 
+import { toast } from "react-toastify";
+
+import {
+  dashboardSummaryAction,
+  listAccessEventsAction,
+  usageReportAction,
+  type AccessEventRecord,
+  type UsageBucket,
+  type UsageSummary,
+} from "@/actions/access-events";
 import { DateRange } from "@/components/dashboard/date-range";
 import { Panel } from "@/components/dashboard/panel";
 import { Button } from "@/components/ui/button";
@@ -24,16 +34,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  ACCESS_EVENTS,
-  dailySeries,
-  denialReasons,
-  eventsForRange,
-  hourlyBuckets,
-  pct,
-  summarize,
-  type RangeKey,
-} from "@/lib/station-data";
+import { eventTime, reasonLabel } from "@/lib/event-format";
+import { fmtDay, pct, rangeToDates, type RangeKey } from "@/lib/station-data";
 
 const GRID_STROKE = "var(--border)";
 const AXIS_FILL = "var(--muted-foreground)";
@@ -42,18 +44,66 @@ const ACCENT = "var(--chart-1)";
 
 function ReportsView() {
   const [range, setRange] = useState<RangeKey>("30d");
-  const events = eventsForRange(ACCESS_EVENTS, range);
-  const stats = summarize(events);
-  const series = dailySeries(events, range);
-  const hourly = hourlyBuckets(events);
-  const reasons = denialReasons(events);
+  const [buckets, setBuckets] = useState<UsageBucket[]>([]);
+  const [summary, setSummary] = useState<UsageSummary | null>(null);
+  const [events, setEvents] = useState<AccessEventRecord[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const dates = rangeToDates(range);
+    const [usageRes, summaryRes, eventRes] = await Promise.all([
+      usageReportAction({ ...dates, group_by: "day" }),
+      dashboardSummaryAction(dates),
+      // shortcut: hourly and denial-reason blocks count the newest 500 events client-side; add backend aggregates when ranges exceed that.
+      listAccessEventsAction({ ...dates, limit: 500 }),
+    ]);
+    const failed = [usageRes, summaryRes, eventRes].find((res) => !res.success);
+    if (failed && !failed.success) {
+      setError(failed.error);
+      toast.error(failed.raw ?? failed.error);
+    } else {
+      setError(null);
+    }
+    if (usageRes.success) setBuckets(usageRes.data.items);
+    if (summaryRes.success) setSummary(summaryRes.data);
+    if (eventRes.success) setEvents(eventRes.data);
+  }, [range]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const series = buckets.map((b) => ({
+    day: fmtDay(`${b.period}T00:00:00`),
+    granted: b.granted_scans,
+    denied: b.denied_scans,
+  }));
+  const hourly = useMemo(() => {
+    const counts = Array.from({ length: 24 }, (_, h) => ({ hour: `${String(h).padStart(2, "0")}:00`, scans: 0 }));
+    for (const e of events) counts[new Date(eventTime(e)).getHours()].scans += 1;
+    return counts;
+  }, [events]);
+  const reasons = useMemo(() => {
+    const denied = events.filter((e) => e.access_result !== "granted");
+    const counts = new Map<string, number>();
+    for (const e of denied) {
+      const reason = reasonLabel(e) ?? "Not reported";
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    }
+    return [...counts]
+      .map(([reason, count]) => ({ reason, count, share: count / denied.length }))
+      .sort((x, y) => y.count - x.count);
+  }, [events]);
+  const granted = summary?.granted_scans ?? 0;
+  const denied = summary?.denied_scans ?? 0;
+  const successRate = granted + denied ? granted / (granted + denied) : 0;
   const rangeLabel =
     range === "today" ? "today" : range === "7d" ? "last 7 days" : "last 30 days";
 
   const topHours = [...hourly]
     .sort((a, b) => b.scans - a.scans)
     .slice(0, 5);
-  const busiestDay = [...series].sort((a, b) => a.granted + a.denied < b.granted + b.denied ? 1 : -1)[0];
+  const busiestDay = [...series].sort((a, b) => b.granted + b.denied - (a.granted + a.denied))[0];
 
   const exportCsv = () => {
     const header = "date,granted,denied";
@@ -80,12 +130,18 @@ function ReportsView() {
         </div>
         <div className="flex items-center gap-2">
           <DateRange value={range} onChange={setRange} />
-          <Button variant="outline" size="sm" onClick={exportCsv}>
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={series.length === 0}>
             <Download aria-hidden />
             Export CSV
           </Button>
         </div>
       </div>
+
+      {error ? (
+        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
 
       {/* usage trend */}
       <Panel title="Usage trend" description={`Daily scan totals with granted/denied split · ${rangeLabel}`}>
@@ -126,13 +182,13 @@ function ReportsView() {
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-lg border border-led-green/25 bg-led-green/10 p-3">
                 <dt className="text-xs text-muted-foreground">Granted</dt>
-                <dd className="text-xl font-semibold tabular-nums text-led-green">{stats.granted}</dd>
-                <dd className="text-xs text-muted-foreground">{pct(stats.successRate)} of attempts</dd>
+                <dd className="text-xl font-semibold tabular-nums text-led-green">{granted}</dd>
+                <dd className="text-xs text-muted-foreground">{pct(successRate)} of attempts</dd>
               </div>
               <div className="rounded-lg border border-led-red/25 bg-led-red/10 p-3">
                 <dt className="text-xs text-muted-foreground">Denied</dt>
-                <dd className="text-xl font-semibold tabular-nums text-led-red">{stats.denied}</dd>
-                <dd className="text-xs text-muted-foreground">{pct(1 - stats.successRate)} of attempts</dd>
+                <dd className="text-xl font-semibold tabular-nums text-led-red">{denied}</dd>
+                <dd className="text-xs text-muted-foreground">{pct(granted + denied ? 1 - successRate : 0)} of attempts</dd>
               </div>
             </dl>
           </Panel>
@@ -151,10 +207,12 @@ function ReportsView() {
                 </li>
               ))}
             </ol>
-            <p className="mt-2 border-t pt-2 text-xs text-muted-foreground">
-              Busiest day: <span className="font-medium text-foreground">{busiestDay.day}</span> ·{" "}
-              {busiestDay.granted + busiestDay.denied} scans
-            </p>
+            {busiestDay ? (
+              <p className="mt-2 border-t pt-2 text-xs text-muted-foreground">
+                Busiest day: <span className="font-medium text-foreground">{busiestDay.day}</span> ·{" "}
+                {busiestDay.granted + busiestDay.denied} scans
+              </p>
+            ) : null}
           </Panel>
         </div>
       </div>
@@ -189,6 +247,9 @@ function ReportsView() {
             ))}
           </TableBody>
         </Table>
+        {reasons.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">No denied scans in this range.</p>
+        ) : null}
       </Panel>
     </div>
   );

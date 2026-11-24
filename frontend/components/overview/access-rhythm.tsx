@@ -26,7 +26,7 @@ function bucketize(events: AccessEvent[]): RhythmPoint[] {
   const total = events.length;
   return SEGMENTS.map((segment) => {
     const scans = events.filter((event) => {
-      const hour = new Date(event.ts).getUTCHours();
+      const hour = new Date(event.ts).getHours();
       return hour >= segment.from && hour <= segment.to;
     }).length;
     return {

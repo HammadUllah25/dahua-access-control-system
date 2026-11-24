@@ -4,6 +4,17 @@
 
 export type RangeKey = "today" | "7d" | "30d";
 
+// Backend report/event filters take PKT calendar dates (YYYY-MM-DD).
+// back = 1 gives the period just before, for comparisons.
+export function rangeToDates(range: RangeKey, back = 0) {
+  const day = (offset: number) =>
+    new Date(Date.now() - offset * 86_400_000).toLocaleDateString("en-CA", {
+      timeZone: "Asia/Karachi",
+    });
+  const days = range === "today" ? 1 : range === "7d" ? 7 : 30;
+  return { start_date: day(days * (back + 1) - 1), end_date: day(days * back) };
+}
+
 export const STATION = {
   id: "ST-04",
   name: "PumpStation 04",
@@ -297,7 +308,7 @@ export function dailySeries(events: AccessEvent[], range: RangeKey) {
 export function hourlyBuckets(events: AccessEvent[]) {
   return Array.from({ length: 24 }, (_, hour) => ({
     hour: `${String(hour).padStart(2, "0")}:00`,
-    scans: events.filter((e) => new Date(e.ts).getUTCHours() === hour).length,
+    scans: events.filter((e) => new Date(e.ts).getHours() === hour).length,
   }));
 }
 

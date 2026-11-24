@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -26,6 +26,12 @@ import {
   YAxis,
 } from "recharts";
 
+import {
+  dashboardStationsAction,
+  listAccessEventsAction,
+  type AccessEventRecord,
+} from "@/actions/access-events";
+import { listDevicesAction, type DeviceListRecord } from "@/actions/get-devices";
 import { DateRange } from "@/components/dashboard/date-range";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Panel } from "@/components/dashboard/panel";
@@ -47,18 +53,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { eventTime, personLabel, toDashboardEvent } from "@/lib/event-format";
 import {
-  ACCESS_EVENTS,
   ALERTS,
-  DEVICE,
-  OUTLET_FOOTFALL,
-  PEOPLE,
-  eventsForPrevRange,
-  eventsForRange,
   fmtDay,
   fmtTime,
   hourlyBuckets,
   pct,
+  rangeToDates,
   summarize,
   type OutletFootfall,
   type RangeKey,
@@ -69,16 +71,18 @@ const AXIS_FILL = "var(--muted-foreground)";
 const RED = "var(--led-red)";
 const ACCENT = "var(--chart-1)";
 
+// Per-station totals from GET /dashboard/stations.
+type FootfallRow = Pick<OutletFootfall, "id" | "outlet" | "city" | "region" | "granted" | "denied">;
+
 function OutletTick(props: {
   x?: number;
   y?: number;
   payload?: { index?: number; value?: string };
+  items?: FootfallRow[];
 }) {
-  const { x = 0, y = 0, payload } = props;
+  const { x = 0, y = 0, payload, items = [] } = props;
   const item =
-    typeof payload?.index === "number"
-      ? OUTLET_FOOTFALL[payload.index]
-      : undefined;
+    typeof payload?.index === "number" ? items[payload.index] : undefined;
   const name = item?.outlet ?? payload?.value ?? "";
   const region = item?.region ?? "";
   const short = name.length > 16 ? `${name.slice(0, 15)}…` : name;
@@ -105,7 +109,7 @@ function OutletTooltip({
   payload,
 }: {
   active?: boolean;
-  payload?: ReadonlyArray<{ payload?: OutletFootfall }>;
+  payload?: ReadonlyArray<{ payload?: FootfallRow }>;
 }) {
   if (!active || !payload?.length) return null;
   const item = payload[0]?.payload;
@@ -159,11 +163,53 @@ function OverviewView() {
     (station) => station.status === "online"
   ).length;
   const [range, setRange] = useState<RangeKey>("7d");
-  const events = eventsForRange(ACCESS_EVENTS, range);
+  const [rawEvents, setRawEvents] = useState<AccessEventRecord[]>([]);
+  const [prevEvents, setPrevEvents] = useState<AccessEventRecord[]>([]);
+  const [footfall, setFootfall] = useState<FootfallRow[]>([]);
+  const [devices, setDevices] = useState<DeviceListRecord[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    // shortcut: KPIs count the newest 500 events per period (backend max); switch to /dashboard/summary totals once volumes exceed that.
+    const [eventRes, prevRes, stationRes, deviceRes] = await Promise.all([
+      listAccessEventsAction({ ...rangeToDates(range), limit: 500 }),
+      listAccessEventsAction({ ...rangeToDates(range, 1), limit: 500 }),
+      dashboardStationsAction(rangeToDates(range)),
+      listDevicesAction(),
+    ]);
+    const failed = [eventRes, stationRes, deviceRes].find((res) => !res.success);
+    setError(failed && !failed.success ? failed.error : null);
+    if (eventRes.success) setRawEvents(eventRes.data);
+    if (prevRes.success) setPrevEvents(prevRes.data);
+    if (deviceRes.success) setDevices(deviceRes.data);
+    if (stationRes.success) {
+      setFootfall(
+        stationRes.data.items.map((s) => ({
+          id: s.station_id,
+          outlet: s.station_name,
+          city: s.city ?? "",
+          region: s.station_code,
+          granted: s.usage.granted_scans,
+          denied: s.usage.denied_scans,
+        }))
+      );
+    }
+  }, [range]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const events = rawEvents.map(toDashboardEvent);
   const stats = summarize(events);
-  const prev = summarize(eventsForPrevRange(ACCESS_EVENTS, range));
+  const prev = summarize(prevEvents.map(toDashboardEvent));
   const hourly = hourlyBuckets(events);
-  const recent = events.slice(0, 8);
+  const recent = rawEvents.slice(0, 8);
+  const controller = devices.find((d) => d.status === "online") ?? devices[0];
+  const controllerOnline = controller?.status === "online";
+  const lastSeen = controller?.last_tcp_reachable_at
+    ? `${fmtDay(controller.last_tcp_reachable_at)} ${fmtTime(controller.last_tcp_reachable_at)}`
+    : "never";
   const rangeLabel =
     range === "today" ? "today" : range === "7d" ? "last 7 days" : "last 30 days";
 
@@ -171,7 +217,9 @@ function OverviewView() {
   const activeCritical = ALERTS.some(
     (a) => a.status === "Active" && a.severity === "Critical"
   );
-  const banner = !DEVICE.online
+  const banner = error
+    ? { tone: "red" as const, label: "Backend offline", detail: error }
+    : !controllerOnline
     ? { tone: "red" as const, label: "Offline", detail: "Controller connection lost — check Device & Door." }
     : activeCritical
       ? { tone: "amber" as const, label: "Attention required", detail: "Active critical alert — review Alerts & Events." }
@@ -270,10 +318,10 @@ function OverviewView() {
         />
         <KpiCard
           label="Controller status"
-          value={DEVICE.online ? "Online" : "Offline"}
-          hint={`last seen ${DEVICE.lastSeen}`}
+          value={controllerOnline ? "Online" : controller ? "Offline" : "None"}
+          hint={controller ? `last seen ${lastSeen}` : "no controller registered"}
           icon={Cpu}
-          tone={DEVICE.online ? "green" : "red"}
+          tone={controllerOnline ? "green" : "red"}
           href="/device"
         />
       </div>
@@ -282,13 +330,13 @@ function OverviewView() {
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel
           title="Foot Fall"
-          description="Granted and denied scans by outlet · Central region"
+          description={`Granted and denied scans by station · ${rangeLabel}`}
           className="lg:col-span-2"
         >
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
-                data={OUTLET_FOOTFALL}
+                data={footfall}
                 margin={{ top: 8, right: 8, bottom: 52, left: -16 }}
                 barCategoryGap="18%"
                 barGap={2}
@@ -300,7 +348,7 @@ function OverviewView() {
                 />
                 <XAxis
                   dataKey="outlet"
-                  tick={<OutletTick />}
+                  tick={<OutletTick items={footfall} />}
                   tickLine={false}
                   axisLine={{ stroke: GRID_STROKE }}
                   interval={0}
@@ -423,17 +471,17 @@ function OverviewView() {
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted-foreground">Controller</dt>
               <dd className="flex items-center gap-2 font-medium">
-                <Led status={DEVICE.online ? "online" : "offline"} />
-                {DEVICE.online ? "Online" : "Offline"}
+                <Led status={controllerOnline ? "online" : "offline"} />
+                {controllerOnline ? "Online" : "Offline"}
               </dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted-foreground">Device</dt>
-              <dd className="font-mono text-xs">{DEVICE.model} · {DEVICE.serial}</dd>
+              <dd className="font-mono text-xs">{controller ? `${controller.model ?? "Controller"} · ${controller.serial_number ?? controller.host}` : "—"}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted-foreground">Last seen</dt>
-              <dd className="font-mono text-xs">{DEVICE.lastSeen}</dd>
+              <dd className="font-mono text-xs">{lastSeen}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted-foreground">
@@ -442,12 +490,12 @@ function OverviewView() {
               </dt>
               <dd className="flex items-center gap-2 font-medium">
                 <DoorClosed aria-hidden className="size-4 text-muted-foreground" />
-                {DEVICE.doorContact}
+                Not reported
               </dd>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-muted-foreground">Lock relay command</dt>
-              <dd className="font-mono text-xs">{DEVICE.relayState}</dd>
+              <dt className="text-muted-foreground">Monitoring</dt>
+              <dd className="font-mono text-xs">{controller?.monitoring_enabled ? "Active" : "Paused"}</dd>
             </div>
             <p className="rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
               Relay command is not proof the door physically opened — state above
@@ -488,15 +536,15 @@ function OverviewView() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {recent.map((e) => {
-              const person = PEOPLE.find((p) => p.id === e.personId);
+            {recent.map((raw) => {
+              const e = toDashboardEvent(raw);
               return (
                 <TableRow key={e.id}>
                   <TableCell className="whitespace-normal break-words font-mono text-xs">
-                    {fmtDay(e.ts)} {fmtTime(e.ts)}
+                    {fmtDay(eventTime(raw))} {fmtTime(eventTime(raw))}
                   </TableCell>
                   <TableCell className="whitespace-normal break-words">
-                    {person ? person.name : <span className="text-muted-foreground">Unresolved</span>}
+                    {personLabel(raw)}
                   </TableCell>
                   <TableCell className="whitespace-normal break-words font-mono text-xs">{e.maskedCard}</TableCell>
                   <TableCell className="whitespace-normal"><ResultBadge result={e.result} /></TableCell>

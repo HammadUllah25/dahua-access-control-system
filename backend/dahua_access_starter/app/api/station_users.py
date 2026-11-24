@@ -307,6 +307,19 @@ def update_station_user(station_id: int, user_id: int, payload: StationUserUpdat
     return _user_read(db, user)
 
 
+@router.delete("/stations/{station_id}/users/{user_id}")
+def delete_station_user(station_id: int, user_id: int, db: Session = Depends(get_db)):
+    user = _user_or_404(db, station_id, user_id)
+    if _active_user_assignment(db, user.id) is not None:
+        raise HTTPException(status_code=409, detail="Revoke the user's RFID card before deleting the user")
+    # Inactive card-history links block the delete (FK RESTRICT); remove them with the user.
+    db.query(UserCardAssignment).filter(UserCardAssignment.station_user_id == user.id).delete(synchronize_session=False)
+    name = user.name
+    db.delete(user)
+    db.commit()
+    return {"deleted": True, "station_user_id": user_id, "name": name}
+
+
 @router.post("/stations/{station_id}/users/{user_id}/cards/adopt", response_model=UserCardAssignmentRead, status_code=status.HTTP_201_CREATED)
 def adopt_existing_station_card(station_id: int, user_id: int, payload: AdoptStationCardRequest, db: Session = Depends(get_db)):
     user = _user_or_404(db, station_id, user_id)
@@ -401,8 +414,16 @@ def confirm_station_user_card_enrollment(station_id: int, user_id: int, session_
     try:
         device = _device_for_station(db, station_id, enrollment.device_id)
         _ensure_card_not_assigned(db, card_number)
-        if db.query(StationCardAssignment).filter(StationCardAssignment.card_number == card_number).first():
-            raise HTTPException(status_code=409, detail="This RFID card already exists in the station-card inventory; use the adopt endpoint if it is an existing cloud card")
+        existing = db.query(StationCardAssignment).filter(StationCardAssignment.card_number == card_number).first()
+        # A removed (inactive) card on this station's controller can be given to a new user;
+        # anything else stays blocked so an in-use or foreign card is never taken over.
+        if existing is not None and (
+            existing.is_active
+            or existing.station_id != station_id
+            or existing.device_id != device.id
+            or existing.device_record_no is None
+        ):
+            raise HTTPException(status_code=409, detail="This RFID card is still active or belongs to another controller; remove it from its current owner first")
         if db.query(AccessCard).filter(AccessCard.card_number == card_number).first():
             raise HTTPException(status_code=409, detail="This RFID card is already registered through the legacy card workflow")
         _ensure_connected(device, db)
@@ -413,26 +434,11 @@ def confirm_station_user_card_enrollment(station_id: int, user_id: int, session_
         card_name = payload.card_name or card_number
         if len(card_name.encode("utf-8")) > 63:
             raise HTTPException(status_code=422, detail="Card display name must fit within 63 UTF-8 bytes; provide a shorter card_name")
-        record_number = access_cards.add_device_card(
-            device.id,
-            card_number=card_number,
-            card_name=card_name,
-            card_type=CARD_TYPE_MAP[payload.card_type],
-            is_valid=payload.is_valid,
-            valid_from=payload.valid_from,
-            valid_until=payload.valid_until,
-            door_indices=payload.door_indices,
-            time_section_indices=payload.time_section_indices,
-        )
-        card = StationCardAssignment(
-            station_id=station_id,
-            device_id=device.id,
-            card_number=card_number,
+        card_fields = dict(
             card_name=card_name,
             role=legacy_role,
             is_billable=bool(effective_billable),
             is_active=True,
-            device_record_no=record_number,
             card_type=CARD_TYPE_MAP[payload.card_type],
             device_card_status=0 if payload.is_valid else 4,
             is_valid=payload.is_valid,
@@ -441,10 +447,37 @@ def confirm_station_user_card_enrollment(station_id: int, user_id: int, session_
             door_indices=payload.door_indices,
             time_section_indices=payload.time_section_indices,
             sync_status="pending_verification",
-            last_sync_error="Card was inserted; verify it through controller inventory before marking synchronized.",
             last_synced_at=datetime.now(UTC),
         )
-        db.add(card)
+        controller_fields = dict(
+            card_number=card_number,
+            card_name=card_name,
+            card_type=CARD_TYPE_MAP[payload.card_type],
+            is_valid=payload.is_valid,
+            valid_from=payload.valid_from,
+            valid_until=payload.valid_until,
+            door_indices=payload.door_indices,
+            time_section_indices=payload.time_section_indices,
+        )
+        if existing is not None:
+            # Re-enable the same controller record under the new owner instead of inserting a duplicate.
+            reused_record = int(existing.device_record_no)
+            access_cards.update_device_card(device.id, reused_record, original_card_number=existing.card_number, **controller_fields)
+            card = existing
+            for field, value in card_fields.items():
+                setattr(card, field, value)
+            card.last_sync_error = "Removed card was reassigned and re-enabled; verify it through controller inventory before marking synchronized."
+        else:
+            record_number = access_cards.add_device_card(device.id, **controller_fields)
+            card = StationCardAssignment(
+                station_id=station_id,
+                device_id=device.id,
+                card_number=card_number,
+                device_record_no=record_number,
+                last_sync_error="Card was inserted; verify it through controller inventory before marking synchronized.",
+                **card_fields,
+            )
+            db.add(card)
         db.flush()
         link = UserCardAssignment(
             station_user_id=user.id,
@@ -488,6 +521,11 @@ def confirm_station_user_card_enrollment(station_id: int, user_id: int, session_
                 access_cards.delete_device_card(device.id, record_number)
             except AccessCardSDKError:
                 pass
+        if "reused_record" in locals():
+            try:
+                access_cards.update_device_card(device.id, reused_record, original_card_number=card_number, **{**controller_fields, "is_valid": False})
+            except AccessCardSDKError:
+                pass
         enrollment_service.confirmation_failed_for_user(session_token)
         if isinstance(exc, IntegrityError):
             raise HTTPException(status_code=409, detail="The card was written but the application could not save the assignment; controller cleanup was attempted. Verify device inventory.") from exc
@@ -497,6 +535,11 @@ def confirm_station_user_card_enrollment(station_id: int, user_id: int, session_
         if "record_number" in locals():
             try:
                 access_cards.delete_device_card(device.id, record_number)
+            except AccessCardSDKError:
+                pass
+        if "reused_record" in locals():
+            try:
+                access_cards.update_device_card(device.id, reused_record, original_card_number=card_number, **{**controller_fields, "is_valid": False})
             except AccessCardSDKError:
                 pass
         enrollment_service.confirmation_failed_for_user(session_token)

@@ -1,10 +1,29 @@
 "use client";
 
-import { Cpu, DoorClosed, Network, RefreshCw, Wrench } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Cpu, Wrench } from "lucide-react";
+import { toast } from "react-toastify";
 
+import {
+  listAccessEventsAction,
+  type AccessEventRecord,
+} from "@/actions/access-events";
+import { getDoorConfigAction, type DoorConfig } from "@/actions/device-control";
+import { listDevicesAction, type DeviceListRecord } from "@/actions/get-devices";
+import { listStationsAction, type StationRecord } from "@/actions/stations";
 import { Panel } from "@/components/dashboard/panel";
 import { ToneBadge } from "@/components/dashboard/badges";
+import { DeviceActions } from "@/components/device/device-actions";
+import { DoorConfigForm } from "@/components/device/door-config-form";
+import { RemoteUnlock } from "@/components/device/remote-unlock";
 import { Led } from "@/common/led";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -13,7 +32,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DEVICE, DEVICE_EVENTS, STATION } from "@/lib/station-data";
+import { eventTime, personLabel, reasonLabel, resultLabel } from "@/lib/event-format";
+import { fmtDay, fmtTimeSec } from "@/lib/station-data";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -24,145 +44,211 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+const when = (iso: string | null) =>
+  iso ? <span className="font-mono text-xs">{fmtDay(iso)} {fmtTimeSec(iso)}</span> : "—";
+
 function DeviceDoorView() {
+  const [devices, setDevices] = useState<DeviceListRecord[]>([]);
+  const [stations, setStations] = useState<StationRecord[]>([]);
+  const [deviceId, setDeviceId] = useState<number | null>(null);
+  const [doorConfig, setDoorConfig] = useState<DoorConfig | null>(null);
+  const [doorError, setDoorError] = useState<string | null>(null);
+  const [events, setEvents] = useState<AccessEventRecord[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadDevices = useCallback(async () => {
+    const [deviceRes, stationRes] = await Promise.all([listDevicesAction(), listStationsAction()]);
+    if (!deviceRes.success) {
+      setError(deviceRes.error);
+      toast.error(deviceRes.error);
+    } else {
+      setDevices(deviceRes.data);
+      setError(null);
+      setDeviceId((current) => current ?? deviceRes.data[0]?.id ?? null);
+    }
+    if (stationRes.success) setStations(stationRes.data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void loadDevices();
+  }, [loadDevices]);
+
+  const device = devices.find((d) => d.id === deviceId) ?? null;
+  const online = device?.status === "online";
+
+  // Door config is read live from the controller, so only ask when it is online.
+  useEffect(() => {
+    if (deviceId === null) return;
+    void listAccessEventsAction({ device_id: deviceId, limit: 15 }).then((res) => {
+      if (res.success) setEvents(res.data);
+    });
+    setDoorConfig(null);
+    setDoorError(null);
+    if (!online) return;
+    void getDoorConfigAction(deviceId).then((res) => {
+      if (res.success) setDoorConfig(res.data);
+      else setDoorError(res.error);
+    });
+  }, [deviceId, online]);
+
+  const station = stations.find((s) => s.id === device?.station_id);
+
   return (
     <div className="flex flex-col gap-4 p-4 lg:p-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">Device &amp; door</h2>
-        <p className="text-xs text-muted-foreground">
-          Whether the access-control hardware is connected and operating
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Device &amp; door</h2>
+          <p className="text-xs text-muted-foreground">
+            Whether the access-control hardware is connected and operating
+          </p>
+        </div>
+        {devices.length > 1 ? (
+          <Select value={String(deviceId)} onValueChange={(v) => v && setDeviceId(Number(v))}>
+            <SelectTrigger size="sm" className="w-56 text-xs">
+              <SelectValue placeholder="Choose controller" />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              {devices.map((d) => (
+                <SelectItem key={d.id} value={String(d.id)}>
+                  {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+      </div>
+
+      {error ? (
+        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          {error}
         </p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* device summary */}
-        <Panel
-          title="Device summary"
-          description="Assigned access controller"
-          action={
-            <span className="inline-flex items-center gap-2 text-xs font-medium">
-              <Led status={DEVICE.online ? "online" : "offline"} />
-              {DEVICE.online ? "Online" : "Offline"}
-            </span>
-          }
-        >
-          <dl>
-            <Row label="Model" value={DEVICE.model} />
-            <Row label="Serial" value={<span className="font-mono text-xs">{DEVICE.serial}</span>} />
-            <Row label="Station" value={STATION.name} />
-            <Row label="Firmware" value={<span className="font-mono text-xs">{DEVICE.firmware}</span>} />
-          </dl>
+      ) : null}
+      {!loading && !error && !device ? (
+        <Panel title="No controller registered">
+          <p className="text-sm text-muted-foreground">Add a controller from Add Device first.</p>
         </Panel>
+      ) : null}
 
-        {/* connection details */}
-        <Panel title="Connection" description="Credentials are stored securely and never displayed">
-          <dl>
-            <Row label="Method" value={DEVICE.connection} />
-            <Row label="IP reference" value={<span className="font-mono text-xs">{DEVICE.ip}</span>} />
-            <Row label="Client status" value={<ToneBadge tone="green">Connected</ToneBadge>} />
-            <Row label="Last seen" value={<span className="font-mono text-xs">{DEVICE.lastSeen}</span>} />
-          </dl>
-        </Panel>
-
-        {/* door / relay status */}
-        <Panel title="Door & relay status" description="Relay command vs physical sensor state shown separately">
-          <dl>
-            <Row label="Door" value={DEVICE.doorName} />
-            <Row label="Lock relay command" value={<span className="font-mono text-xs">{DEVICE.relayState}</span>} />
-            <Row
-              label="Door contact (physical)"
-              value={
-                DEVICE.doorContactWired ? (
-                  <span className="inline-flex items-center gap-2 font-medium">
-                    <DoorClosed aria-hidden className="size-4 text-muted-foreground" />
-                    {DEVICE.doorContact}
-                  </span>
-                ) : (
-                  <ToneBadge tone="grey">Unknown — no sensor wired</ToneBadge>
-                )
+      {device ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* device summary */}
+            <Panel
+              title="Device summary"
+              description="Assigned access controller"
+              action={
+                <span className="inline-flex items-center gap-2 text-xs font-medium capitalize">
+                  <Led status={online ? "online" : device.status === "offline" ? "offline" : "pending"} />
+                  {device.status}
+                </span>
               }
-            />
-          </dl>
-          <p className="mt-2 rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
-            A relay command is not proof the door physically opened — physical
-            state requires the wired door contact sensor.
-          </p>
-        </Panel>
+            >
+              <dl>
+                <Row label="Name" value={device.name} />
+                <Row label="Model" value={device.model ?? "—"} />
+                <Row label="Serial" value={<span className="font-mono text-xs">{device.serial_number ?? "—"}</span>} />
+                <Row label="MAC" value={<span className="font-mono text-xs">{device.mac_address ?? "—"}</span>} />
+                <Row label="Station" value={station ? `${station.station_code} · ${station.name}` : "Not assigned"} />
+              </dl>
+            </Panel>
 
-        {/* sync status */}
-        <Panel title="Sync status" description="Configuration pushes to the controller">
-          <dl>
-            <Row label="Last successful sync" value={<span className="font-mono text-xs">{DEVICE.lastSync}</span>} />
-            <Row label="Pending changes" value={DEVICE.pendingChanges === 0 ? "None" : <ToneBadge tone="amber">{DEVICE.pendingChanges} pending</ToneBadge>} />
-            <Row label="Sync errors" value={DEVICE.lastError ?? <ToneBadge tone="green">None</ToneBadge>} />
-          </dl>
-        </Panel>
-      </div>
+            {/* connection details */}
+            <Panel title="Connection" description="Credentials are stored encrypted and never displayed">
+              <dl>
+                <Row label="Address" value={<span className="font-mono text-xs">{device.host}:{device.port}</span>} />
+                <Row label="Monitoring" value={device.monitoring_enabled ? "On" : <ToneBadge tone="amber">Paused</ToneBadge>} />
+                <Row label="Last connected" value={when(device.last_connected_at)} />
+                <Row label="Last reachable" value={when(device.last_tcp_reachable_at)} />
+                <Row label="Failed checks in a row" value={device.consecutive_failures} />
+              </dl>
+              <div className="mt-3">
+                <DeviceActions deviceId={device.id} online={online} onDone={() => void loadDevices()} />
+              </div>
+            </Panel>
 
-      {/* device event history */}
-      <Panel
-        title="Device event history"
-        description="Connectivity changes, restarts and controller events captured by the integration"
-        action={<Cpu aria-hidden className="size-4 text-muted-foreground" />}
-      >
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Time</TableHead>
-              <TableHead>Event</TableHead>
-              <TableHead>Detail</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {DEVICE_EVENTS.map((e) => (
-              <TableRow key={e.ts + e.type}>
-                <TableCell className="font-mono text-xs">{e.ts}</TableCell>
-                <TableCell className="font-medium">{e.type}</TableCell>
-                <TableCell className="text-muted-foreground">{e.detail}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Panel>
+            {/* door sensor config */}
+            <Panel title="Door sensor & unlock" description="Read from and written to the controller">
+              {online && doorConfig ? (
+                <DoorConfigForm key={device.id} config={doorConfig} onSaved={setDoorConfig} />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {!online
+                    ? "Connect the controller to read its door settings."
+                    : doorError ?? "Reading door settings from the controller…"}
+                </p>
+              )}
+              <p className="mt-3 rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
+                A relay command is not proof the door physically opened — physical
+                state requires the wired door contact sensor.
+              </p>
+            </Panel>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* device configuration */}
-        <Panel title="Device configuration" description="Supported integration settings only">
-          <dl>
-            <Row label="Door name" value={DEVICE.doorName} />
-            <Row label="Device label" value="Washroom Access — Station 04" />
-            <Row label="Reader protocol" value="Wiegand / RS-485 (documented, unvalidated)" />
-          </dl>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Low-level controller settings are not exposed to station admins.
-          </p>
-        </Panel>
+            {/* card sync status */}
+            <Panel title="Card sync status" description="Controller card list vs the central record">
+              <dl>
+                <Row label="Inventory status" value={<span className="capitalize">{device.inventory_status.replaceAll("_", " ")}</span>} />
+                <Row label="Cards expected" value={device.expected_card_count ?? "—"} />
+                <Row label="Cards on controller" value={device.observed_card_count ?? "—"} />
+                <Row label="Last inventory check" value={when(device.last_inventory_at)} />
+              </dl>
+              {online ? (
+                <div className="mt-3">
+                  <RemoteUnlock deviceId={device.id} onDone={() => void loadDevices()} />
+                </div>
+              ) : null}
+            </Panel>
+          </div>
 
-        {/* troubleshooting */}
-        <Panel
-          title="Troubleshooting"
-          description="Connection checklist and last error"
-          action={<Wrench aria-hidden className="size-4 text-muted-foreground" />}
-        >
-          <ul className="space-y-2 text-sm">
-            {[
-              { icon: Network, text: "Controller reachable over the station network (ping 10.20.4.11)." },
-              { icon: RefreshCw, text: "SmartPSS Lite client connected and logged in with a device operator account." },
-              { icon: DoorClosed, text: "Door contact wiring sealed — tamper input reporting normally." },
-            ].map(({ icon: Icon, text }) => (
-              <li key={text} className="flex items-start gap-2">
-                <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-led-green" />
-                {text}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
-            {DEVICE.lastError
-              ? `Last error: ${DEVICE.lastError}`
-              : "No connection errors recorded. Remote repair is not available — contact the site technician."}
-          </p>
-        </Panel>
-      </div>
+          {/* recent controller events */}
+          <Panel
+            title="Recent controller events"
+            description="Latest scans and remote commands reported by this controller"
+            action={<Cpu aria-hidden className="size-4 text-muted-foreground" />}
+          >
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Event</TableHead>
+                  <TableHead>Detail</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {events.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="font-mono text-xs">
+                      {fmtDay(eventTime(e))} {fmtTimeSec(eventTime(e))}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {e.event_type === "REMOTE_UNLOCK" ? "Remote unlock" : resultLabel(e)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {personLabel(e)}
+                      {reasonLabel(e) ? ` · ${reasonLabel(e)}` : ""}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {events.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">No events from this controller yet.</p>
+            ) : null}
+          </Panel>
+
+          {/* troubleshooting */}
+          <Panel
+            title="Troubleshooting"
+            description="Last error reported by the connection monitor"
+            action={<Wrench aria-hidden className="size-4 text-muted-foreground" />}
+          >
+            <p className="text-sm">
+              {device.last_error ?? "No connection errors recorded."}
+            </p>
+          </Panel>
+        </>
+      ) : null}
     </div>
   );
 }

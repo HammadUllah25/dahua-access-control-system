@@ -1,9 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Download, Search } from "lucide-react";
+import { Download, RefreshCw, Search } from "lucide-react";
+import { toast } from "react-toastify";
 
+import {
+  listAccessEventsAction,
+  type AccessEventRecord,
+} from "@/actions/access-events";
+import { listStationsAction, type StationRecord } from "@/actions/stations";
 import { DateRange } from "@/components/dashboard/date-range";
 import { Panel } from "@/components/dashboard/panel";
 import { ResultBadge } from "@/components/dashboard/badges";
@@ -32,82 +38,86 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  ACCESS_EVENTS,
-  DEVICE,
-  OUTLET_FOOTFALL,
-  PEOPLE,
-  eventsForRange,
-  fmtDay,
-  fmtTimeSec,
-  type AccessEvent,
-  type RangeKey,
-} from "@/lib/station-data";
+  eventTime,
+  maskCard,
+  personLabel,
+  reasonLabel,
+  resultLabel,
+} from "@/lib/event-format";
+import { fmtDay, fmtTimeSec, rangeToDates, type RangeKey } from "@/lib/station-data";
 
 const PAGE_SIZE = 25;
-const NAMED_PERSON_IDS = new Set(["P001", "P002", "P003", "P004"]);
-
-function stationName(id: string) {
-  const outlet = OUTLET_FOOTFALL.find((station) => String(station.id) === id);
-  return outlet ? `${outlet.outlet} · ${outlet.city}` : id;
-}
-
-function personLabel(personId: string | null) {
-  if (!personId) return "Unresolved";
-  const person = PEOPLE.find((p) => p.id === personId);
-  if (!person) return "Unresolved";
-  return NAMED_PERSON_IDS.has(person.id) ? person.name : person.role;
-}
+// shortcut: loads the newest 500 events (backend max per request); page with offset once sites exceed that per range.
+const FETCH_LIMIT = 500;
 
 function AccessLogsView() {
   const params = useSearchParams();
+  const initialResult = params.get("result");
   const [range, setRange] = useState<RangeKey>("30d");
-  const [resultParam] = useState<"All" | "Granted" | "Denied">(
-    params.get("result") === "Granted" || params.get("result") === "Denied"
-      ? (params.get("result") as "Granted" | "Denied")
-      : "All"
+  const [result, setResult] = useState<"All" | "Granted" | "Denied">(
+    initialResult === "Granted" || initialResult === "Denied" ? initialResult : "All"
   );
-  const [result, setResult] = useState<"All" | "Granted" | "Denied">(resultParam);
   const [stationId, setStationId] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [visible, setVisible] = useState(PAGE_SIZE);
-  const [detail, setDetail] = useState<AccessEvent | null>(null);
+  const [detail, setDetail] = useState<AccessEventRecord | null>(null);
+  const [events, setEvents] = useState<AccessEventRecord[]>([]);
+  const [stations, setStations] = useState<StationRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [eventRes, stationRes] = await Promise.all([
+      listAccessEventsAction({
+        ...rangeToDates(range),
+        station_id: stationId === "all" ? undefined : Number(stationId),
+        limit: FETCH_LIMIT,
+      }),
+      listStationsAction(),
+    ]);
+    if (!eventRes.success) {
+      setError(eventRes.error);
+      toast.error(eventRes.raw ?? eventRes.error);
+    } else {
+      setEvents(eventRes.data);
+      setError(null);
+    }
+    if (stationRes.success) setStations(stationRes.data);
+    setVisible(PAGE_SIZE);
+    setLoading(false);
+  }, [range, stationId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const filtered = useMemo(() => {
-    const base = eventsForRange(ACCESS_EVENTS, range);
     const q = query.trim().toLowerCase();
-    return base.filter((e) => {
-      if (result !== "All" && e.result !== result) return false;
-      if (stationId !== "all" && e.stationId !== stationId) return false;
+    return events.filter((e) => {
+      if (result !== "All" && resultLabel(e) !== result) return false;
       if (!q) return true;
-      const person = PEOPLE.find((p) => p.id === e.personId);
-      const station = stationName(e.stationId);
-      const label = personLabel(e.personId);
-      return (
-        e.id.toLowerCase().includes(q) ||
-        e.maskedCard.toLowerCase().includes(q) ||
-        station.toLowerCase().includes(q) ||
-        e.stationId.toLowerCase().includes(q) ||
-        label.toLowerCase().includes(q) ||
-        (person?.name.toLowerCase().includes(q) ?? false)
-      );
+      return [String(e.id), e.card_number, e.station_name, personLabel(e), e.device_name]
+        .some((value) => value?.toLowerCase().includes(q));
     });
-  }, [range, result, stationId, query]);
+  }, [events, result, query]);
 
   const exportCsv = () => {
     const header = "id,timestamp,station,person,card,result,reason,device,door";
-    const rows = filtered.map((e) => {
-      return [
+    const cell = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const rows = filtered.map((e) =>
+      [
         e.id,
-        e.ts,
-        stationName(e.stationId),
-        personLabel(e.personId),
-        e.maskedCard,
-        e.result,
-        e.reason ?? "",
-        e.device,
-        e.door,
-      ].join(",");
-    });
+        eventTime(e),
+        e.station_name,
+        personLabel(e),
+        maskCard(e.card_number),
+        resultLabel(e),
+        reasonLabel(e),
+        e.device_serial_number ?? e.device_name,
+        e.door_name ?? e.door_number,
+      ].map(cell).join(",")
+    );
     const blob = new Blob([[header, ...rows].join("\n")], {
       type: "text/csv;charset=utf-8",
     });
@@ -132,7 +142,11 @@ function AccessLogsView() {
         </div>
         <div className="flex items-center gap-2">
           <DateRange value={range} onChange={setRange} />
-          <Button variant="outline" size="sm" onClick={exportCsv}>
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            <RefreshCw aria-hidden className={loading ? "animate-spin" : undefined} />
+            Refresh
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
             <Download aria-hidden />
             Export CSV
           </Button>
@@ -148,6 +162,7 @@ function AccessLogsView() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search event, station, card or person"
+              aria-label="Search access logs"
               className="h-8 pl-8 text-xs"
             />
           </div>
@@ -175,21 +190,16 @@ function AccessLogsView() {
               </button>
             ))}
           </div>
-          <Select
-            value={stationId}
-            onValueChange={(v) => {
-              setStationId(v ?? "all");
-              setVisible(PAGE_SIZE);
-            }}
-          >
+          <Select value={stationId} onValueChange={(v) => setStationId(v ?? "all")}>
             <SelectTrigger size="sm" className="w-52 text-xs">
               <SelectValue placeholder="All stations" />
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false}>
               <SelectItem value="all">All stations</SelectItem>
-              {OUTLET_FOOTFALL.map((station) => (
+              {stations.map((station) => (
                 <SelectItem key={station.id} value={String(station.id)}>
-                  {station.outlet} · {station.city}
+                  {station.name}
+                  {station.city ? ` · ${station.city}` : ""}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -200,8 +210,17 @@ function AccessLogsView() {
       {/* logs table */}
       <Panel
         title="Records"
-        description={`${filtered.length} matching events · showing ${shown.length}`}
+        description={
+          loading
+            ? "Loading events…"
+            : `${filtered.length} matching events · showing ${shown.length}`
+        }
       >
+        {error ? (
+          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
         <Table>
           <TableHeader>
             <TableRow>
@@ -216,7 +235,7 @@ function AccessLogsView() {
           </TableHeader>
           <TableBody>
             {shown.map((e) => {
-              const label = personLabel(e.personId);
+              const label = personLabel(e);
               return (
                 <TableRow
                   key={e.id}
@@ -224,32 +243,30 @@ function AccessLogsView() {
                   onClick={() => setDetail(e)}
                 >
                   <TableCell className="font-mono text-xs">
-                    {fmtDay(e.ts)} {fmtTimeSec(e.ts)}
+                    {fmtDay(eventTime(e))} {fmtTimeSec(eventTime(e))}
                   </TableCell>
-                  <TableCell>{stationName(e.stationId)}</TableCell>
+                  <TableCell>{e.station_name ?? "—"}</TableCell>
                   <TableCell
-                    className={
-                      label === "Unresolved" ? "text-muted-foreground" : undefined
-                    }
+                    className={label === "Unresolved" ? "text-muted-foreground" : undefined}
                   >
                     {label}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{e.maskedCard}</TableCell>
+                  <TableCell className="font-mono text-xs">{maskCard(e.card_number)}</TableCell>
                   <TableCell>
-                    <ResultBadge result={e.result} />
+                    <ResultBadge result={resultLabel(e)} />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {e.reason ?? "—"}
+                    {reasonLabel(e) ?? "—"}
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
-                    {e.device}
+                    {e.device_serial_number ?? e.device_name ?? "—"}
                   </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
-        {shown.length === 0 ? (
+        {!loading && shown.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             No events match the current filters.
           </p>
@@ -280,18 +297,21 @@ function AccessLogsView() {
               </SheetDescription>
               <dl className="space-y-3 text-sm">
                 {[
-                  ["Timestamp", `${fmtDay(detail.ts)} ${fmtTimeSec(detail.ts)}`],
-                  ["Station", stationName(detail.stationId)],
-                  ["Person", personLabel(detail.personId)],
-                  ["Card", detail.maskedCard],
-                  ["Result", detail.result],
-                  ["Reason", detail.reason ?? "—"],
-                  ["Device", detail.device],
-                  ["Door", detail.door],
-                  ["Controller", DEVICE.model],
+                  ["Timestamp", `${fmtDay(eventTime(detail))} ${fmtTimeSec(eventTime(detail))}`],
+                  ["Station", detail.station_name ?? "—"],
+                  ["Person", personLabel(detail)],
+                  ["Card", maskCard(detail.card_number)],
+                  ["Result", resultLabel(detail)],
+                  ["Reason", reasonLabel(detail) ?? "—"],
+                  ["Direction", detail.event_direction],
+                  ["Source", `${detail.event_source} · ${detail.event_type}`],
+                  ["Billable", detail.is_billable ? `Yes · ${detail.rate_applied ?? "unpriced"} ${detail.currency}` : "No"],
+                  ["Device", detail.device_name ?? "—"],
+                  ["Serial", detail.device_serial_number ?? "—"],
+                  ["Door", detail.door_name ?? (detail.door_number ?? "—")],
                 ].map(([label, value]) => (
                   <div
-                    key={label}
+                    key={String(label)}
                     className="flex items-center justify-between gap-4 border-b pb-2"
                   >
                     <dt className="text-muted-foreground">{label}</dt>

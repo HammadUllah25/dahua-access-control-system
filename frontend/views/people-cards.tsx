@@ -11,6 +11,7 @@ import {
   Plus,
   Search,
   ShieldCheck,
+  Trash2,
   Users,
 } from "lucide-react";
 import { toast } from "react-toastify";
@@ -18,6 +19,7 @@ import { toast } from "react-toastify";
 import { Panel } from "@/components/dashboard/panel";
 import { ToneBadge } from "@/components/dashboard/badges";
 import { AssignCard } from "@/components/cards/assign-card";
+import { RemoveCard } from "@/components/cards/remove-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -55,6 +57,8 @@ import {
 } from "@/actions/stations";
 import {
   createStationUserAction,
+  deleteStationUserAction,
+  revokeStationUserCardAction,
   listStationRolesAction,
   listStationUsersAction,
   updateStationUserAction,
@@ -144,6 +148,7 @@ function PeopleCardsView() {
     cardValidUntil: "",
   });
   const [editSaving, setEditSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const loadBase = useCallback(async () => {
@@ -324,6 +329,36 @@ function PeopleCardsView() {
       cardValidFrom: user.active_card?.valid_from ?? "",
       cardValidUntil: user.active_card?.valid_until ?? "",
     });
+  };
+
+  const deleteUser = async (user: StationUserRecord) => {
+    if (!selectedStation) return;
+    const card = user.active_card;
+    const prompt = card
+      ? `Delete ${user.name}? Card ${card.card_number} is removed from the controller first. This cannot be undone.`
+      : `Delete ${user.name}? This cannot be undone.`;
+    if (!window.confirm(prompt)) return;
+    setDeletingId(user.id);
+    try {
+      // Controller first: the backend refuses to delete a user who still holds a card.
+      if (card) {
+        const revoked = await revokeStationUserCardAction(selectedStation.id, user.id);
+        if (!revoked.success) {
+          toast.error(revoked.raw ?? revoked.error);
+          return;
+        }
+      }
+      const res = await deleteStationUserAction(selectedStation.id, user.id);
+      if (!res.success) {
+        toast.error(res.raw ?? res.error);
+        if (card) setReloadKey((key) => key + 1); // card is already gone; show that
+        return;
+      }
+      toast.success(`${user.name} deleted.`);
+      setReloadKey((key) => key + 1);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const saveEdit = async (event: React.FormEvent) => {
@@ -634,22 +669,46 @@ function PeopleCardsView() {
                         <Pencil aria-hidden />
                         Edit
                       </Button>
+                      {card && selectedStation ? (
+                        <RemoveCard
+                          stationId={selectedStation.id}
+                          userId={user.id}
+                          userName={user.name}
+                          cardNumber={card.card_number}
+                          disabled={usersLoading}
+                          onRemoved={() => setReloadKey((key) => key + 1)}
+                        />
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!canAssign}
+                          onClick={() => setCardUser(user)}
+                          title={
+                            cardDevice
+                              ? "Scan and assign a card"
+                              : "Assign a controller to this station first"
+                          }
+                          className="disabled:cursor-not-allowed disabled:pointer-events-auto"
+                        >
+                          <Nfc aria-hidden />
+                          Assign card
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={!canAssign}
-                        onClick={() => setCardUser(user)}
-                        title={
-                          card
-                            ? "This entry already has a card on record"
-                            : cardDevice
-                              ? "Scan and assign a card"
-                              : "Assign a controller to this station first"
-                        }
-                        className="disabled:cursor-not-allowed disabled:pointer-events-auto"
+                        onClick={() => deleteUser(user)}
+                        disabled={!hasStation || usersLoading || deletingId !== null}
+                        title={card ? "Remove the card from the controller and delete this user" : "Delete user"}
+                        aria-label={`Delete ${user.name}`}
+                        className="text-destructive hover:text-destructive disabled:cursor-not-allowed disabled:pointer-events-auto"
                       >
-                        <Nfc aria-hidden />
-                        {card ? "Card assigned" : "Assign card"}
+                        {deletingId === user.id ? (
+                          <Loader2 aria-hidden className="animate-spin" />
+                        ) : (
+                          <Trash2 aria-hidden />
+                        )}
                       </Button>
                     </div>
                   </TableCell>

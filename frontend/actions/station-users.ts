@@ -82,6 +82,26 @@ export async function createStationUserAction(
   });
 }
 
+export async function deleteStationUserAction(
+  stationId: number,
+  userId: number
+): Promise<ActionResult<{ deleted: boolean; station_user_id: number; name: string }>> {
+  return backendRequest(`/stations/${stationId}/users/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+// Freezes the card on the controller and ends the user link; the card record is kept for history.
+export async function revokeStationUserCardAction(
+  stationId: number,
+  userId: number
+): Promise<ActionResult<{ deactivated: boolean; card_number: string; sync_status: string }>> {
+  return backendRequest(`/stations/${stationId}/users/${userId}/card`, {
+    method: "DELETE",
+    timeoutMs: 45_000,
+  });
+}
+
 export async function updateStationUserAction(
   stationId: number,
   userId: number,
