@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { DeviceDoorView } from "@/views/device-door";
 
 export const metadata: Metadata = {
-  title: "Device & Door",
+  title: "Door & Sensor",
 };
 
 export default function DevicePage() {

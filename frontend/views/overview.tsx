@@ -220,7 +220,7 @@ function OverviewView() {
   const banner = error
     ? { tone: "red" as const, label: "Backend offline", detail: error }
     : !controllerOnline
-    ? { tone: "red" as const, label: "Offline", detail: "Controller connection lost — check Device & Door." }
+    ? { tone: "red" as const, label: "Offline", detail: "Controller connection lost — check Door & Sensor." }
     : activeCritical
       ? { tone: "amber" as const, label: "Attention required", detail: "Active critical alert — review Alerts & Events." }
       : { tone: "green" as const, label: "Operational", detail: `Controller online · ${ALERTS.filter((a) => a.status === "Active").length} active alert(s)` };
@@ -463,7 +463,7 @@ function OverviewView() {
           description="Controller connection and door state where a contact sensor is installed"
           action={
             <Link href="/device" className="text-xs font-medium text-primary hover:underline">
-              Device &amp; Door
+              Door &amp; Sensor
             </Link>
           }
         >

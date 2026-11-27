@@ -661,7 +661,8 @@ class DahuaAccessCardService:
     def update_device_card(self, device_id: int, record_number: int, *, original_card_number: str, card_number: str,
                            card_name: str, card_type: int, is_valid: bool,
                            valid_from: date, valid_until: date,
-                           door_indices: list[int], time_section_indices: list[int]) -> None:
+                           door_indices: list[int], time_section_indices: list[int]) -> int:
+        """Update a card record in place; returns the controller record number actually updated."""
         from ctypes import cast, c_void_p, pointer, sizeof
 
         api = self._imports()
@@ -686,8 +687,8 @@ class DahuaAccessCardService:
         # card structure contains pointer fields (for extended floor data), so
         # copying it and releasing the source buffer could leave dangling pointers.
         record, record_buffer = current_rows[0]
-        if int(record.nRecNo) != int(record_number):
-            raise AccessCardSDKError("The controller returned a different record number; update cancelled.")
+        if _decode(record.szCardNo).strip().upper() != original_number:
+            raise AccessCardSDKError("The controller returned a different card; update cancelled.")
         encoded_name = card_name.encode("utf-8")
         if len(encoded_name) > 63:
             raise AccessCardSDKError("card_name must fit within 63 UTF-8 bytes for the controller record.")
@@ -725,6 +726,7 @@ class DahuaAccessCardService:
             raise AccessCardSDKError(f"Dahua card update failed: {client.GetLastErrorMessage()}")
         # Keep a local reference to the source allocation for the full native call.
         _ = record_buffer
+        return int(record.nRecNo)
 
     def _find_native_records(self, device_id: int, card_number: str, record_number: int):
         """Find a native card record using the controller's unfiltered inventory query.
@@ -752,6 +754,7 @@ class DahuaAccessCardService:
             raise AccessCardSDKError(f"Dahua FindRecord failed: {client.GetLastErrorMessage()}")
         find_handle = int(getattr(find_out.lFindeHandle, "value", find_out.lFindeHandle))
         found = []
+        by_uid = []
         target_number = card_number.strip().upper()
         target_record_number = int(record_number)
         try:
@@ -781,19 +784,23 @@ class DahuaAccessCardService:
                 ).contents
                 for index in range(count):
                     row = rows[index]
+                    actual_number = _decode(row.szCardNo).strip().upper()
                     if int(row.nRecNo) == target_record_number:
-                        actual_number = _decode(row.szCardNo).strip().upper()
                         if actual_number != target_number:
                             raise AccessCardSDKError(
                                 "The controller record number belongs to a different card; update cancelled."
                             )
                         # Keep the native buffer alive until ControlDevice(RECORDSET_UPDATE) returns.
                         found.append((row, buffer))
+                    elif actual_number == target_number:
+                        by_uid.append((row, buffer))
                 if count < batch_size:
                     break
         finally:
             client.FindRecordClose(find_handle)
-        return found
+        # Stored record numbers can be wrong (some legacy rows hold the card UID as an int32);
+        # fall back to the card's own record when exactly one record carries this UID.
+        return found or (by_uid if len(by_uid) == 1 else [])
 
     @_per_device_serialized
     def delete_device_card(self, device_id: int, record_number: int) -> None:

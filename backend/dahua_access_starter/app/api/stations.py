@@ -775,6 +775,17 @@ def check_device_inventory(device_id: int, db: Session = Depends(get_db)):
         ) from exc
 
     observed_numbers = {str(row.get("card_number") or "").upper() for row in rows if row.get("card_number")}
+    # Repair stored record numbers from the controller so later updates/revokes hit the right record.
+    record_by_card: dict[str, list[int]] = {}
+    for row in rows:
+        if row.get("card_number") and row.get("record_number") is not None:
+            record_by_card.setdefault(str(row["card_number"]).upper(), []).append(int(row["record_number"]))
+    repaired = []
+    for item in expected_assignments:
+        numbers = record_by_card.get(item.card_number.upper(), [])
+        if len(numbers) == 1 and item.device_record_no != numbers[0]:
+            item.device_record_no = numbers[0]
+            repaired.append(item.card_number)
     missing = sorted(expected_numbers - observed_numbers)
     unexpected = sorted(observed_numbers - expected_numbers)
     inventory_status = "needs_reprovisioning" if missing else ("in_sync" if not unexpected else "in_sync_with_unexpected_records")
@@ -791,7 +802,7 @@ def check_device_inventory(device_id: int, db: Session = Depends(get_db)):
         observed_count=len(observed_numbers),
         missing_cards=missing,
         unexpected_cards=unexpected,
-        result={"inventory_status": inventory_status},
+        result={"inventory_status": inventory_status, "repaired_record_numbers": repaired},
         completed_at=now,
     )
     db.add(check_job)
@@ -823,6 +834,7 @@ def check_device_inventory(device_id: int, db: Session = Depends(get_db)):
         "unexpected_cards": unexpected,
         "sync_job_id": check_job.id,
         "reprovision_job_id": reprovision_job_id,
+        "repaired_record_numbers": repaired,
         "note": "Unexpected records are reported but never deleted automatically. Use the separate confirmed reprovision action only after reviewing the comparison.",
     }
 

@@ -599,13 +599,7 @@ function PeopleCardsView() {
                   </TableCell>
                   <TableCell>
                     <ToneBadge
-                      tone={
-                        access.kind === "master"
-                          ? "amber"
-                          : access.kind === "general" || access.kind === "shared_staff"
-                            ? "blue"
-                            : "grey"
-                      }
+                      tone={access.kind === "master" ? "amber" : "grey"}
                     >
                       {access.label}
                     </ToneBadge>

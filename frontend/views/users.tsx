@@ -298,7 +298,7 @@ function UsersView() {
             </TableBody>
           </Table>
           <p className="mt-3 text-xs text-muted-foreground">
-            Overview, Stations, Access Logs, Device & Door and Settings stay
+            Overview, Stations, Access Logs, Door & Sensor and Settings stay
             available to every role. Modules hidden in Settings → Dashboard
             customization stay hidden for every role.
           </p>

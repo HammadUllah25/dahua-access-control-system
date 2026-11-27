@@ -462,8 +462,10 @@ def confirm_station_user_card_enrollment(station_id: int, user_id: int, session_
         if existing is not None:
             # Re-enable the same controller record under the new owner instead of inserting a duplicate.
             reused_record = int(existing.device_record_no)
-            access_cards.update_device_card(device.id, reused_record, original_card_number=existing.card_number, **controller_fields)
+            actual_record = access_cards.update_device_card(device.id, reused_record, original_card_number=existing.card_number, **controller_fields)
             card = existing
+            if actual_record is not None:
+                card.device_record_no = reused_record = actual_record
             for field, value in card_fields.items():
                 setattr(card, field, value)
             card.last_sync_error = "Removed card was reassigned and re-enabled; verify it through controller inventory before marking synchronized."
@@ -570,7 +572,7 @@ def deactivate_station_user_card(station_id: int, user_id: int, db: Session = De
     device = _device_for_station(db, station_id, card.device_id)
     _ensure_connected(device, db)
     try:
-        access_cards.update_device_card(
+        actual_record = access_cards.update_device_card(
             device.id,
             int(card.device_record_no),
             original_card_number=card.card_number,
@@ -589,6 +591,8 @@ def deactivate_station_user_card(station_id: int, user_id: int, db: Session = De
         db.commit()
         raise HTTPException(status_code=502, detail=f"Could not revoke the card on the Dahua controller: {exc}") from exc
     now = datetime.now(UTC)
+    if actual_record is not None:
+        card.device_record_no = actual_record  # repairs a stored number that pointed at the wrong record
     card.is_active = False
     card.is_valid = False
     card.device_card_status = 4
@@ -690,7 +694,7 @@ def activate_station_user_card(
         raise HTTPException(status_code=409, detail="This user or RFID card already has an active card assignment") from exc
 
     try:
-        access_cards.update_device_card(
+        actual_record = access_cards.update_device_card(
             device.id,
             int(card.device_record_no),
             original_card_number=card.card_number,
@@ -713,6 +717,8 @@ def activate_station_user_card(
         raise HTTPException(status_code=502, detail=f"Could not reactivate the card on the Dahua controller: {exc}") from exc
 
     card.last_synced_at = datetime.now(UTC)
+    if actual_record is not None:
+        card.device_record_no = actual_record
     try:
         db.commit()
     except IntegrityError as exc:

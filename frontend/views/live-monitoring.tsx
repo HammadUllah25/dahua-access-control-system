@@ -144,7 +144,7 @@ function LiveMonitoringView() {
               Not reported
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              The backend does not capture door-contact events yet; check the sensor setting in Device &amp; Door.
+              The backend does not capture door-contact events yet; check the sensor setting in Door &amp; Sensor.
             </p>
           </Panel>
 
@@ -182,7 +182,7 @@ function LiveMonitoringView() {
               </Button>
               <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/device" />}>
                 <ServerCog aria-hidden />
-                Open Device &amp; Door
+                Open Door &amp; Sensor
               </Button>
             </div>
           </Panel>

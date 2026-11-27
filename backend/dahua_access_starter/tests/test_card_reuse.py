@@ -48,7 +48,7 @@ def _enroll(client: TestClient, station_id: int, user_id: int, device_id: int):
 
 
 def test_removed_card_is_reused_for_a_new_user(monkeypatch):
-    assert "card-reuse" in DATABASE_URL or "dahua-" in DATABASE_URL, "refusing to run against the installation database"
+    assert Path(tempfile.gettempdir()).as_posix().lower() in DATABASE_URL.lower(), "refusing to run outside a temp database"
     adds, updates = [], []
     monkeypatch.setattr(station_users_api.sessions, "is_connected", lambda _id: True)
     monkeypatch.setattr(
@@ -60,7 +60,7 @@ def test_removed_card_is_reused_for_a_new_user(monkeypatch):
 
     with TestClient(app) as client:
         db = SessionLocal()
-        station = Station(station_code="REUSE01", name="Reuse Station", is_active=True)
+        station = Station(station_code=f"REUSE{os.getpid()}", name="Reuse Station", is_active=True)
         db.add(station)
         db.flush()
         device = Device(

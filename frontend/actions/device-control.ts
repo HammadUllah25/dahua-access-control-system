@@ -69,6 +69,43 @@ export async function disconnectDeviceAction(
   return backendRequest(`/devices/${deviceId}/disconnect`, { method: "POST" });
 }
 
+export type InventoryCheckResult = {
+  inventory_status: string;
+  expected_count: number;
+  observed_count: number;
+  missing_cards: string[];
+  unexpected_cards: string[];
+  repaired_record_numbers: string[];
+  note: string;
+};
+
+export type ReprovisionResult = {
+  status: string;
+  restored_cards: string[];
+  failed_cards: { card_number: string; error: string }[];
+};
+
+// Reads the controller's card list, compares it with the database and repairs stored record numbers.
+export async function inventoryCheckAction(
+  deviceId: number
+): Promise<ActionResult<InventoryCheckResult>> {
+  return backendRequest<InventoryCheckResult>(`/devices/${deviceId}/inventory-check`, {
+    method: "POST",
+    timeoutMs: 60_000,
+  });
+}
+
+// Writes the cards that are in the database but missing on the controller.
+export async function reprovisionDeviceAction(
+  deviceId: number
+): Promise<ActionResult<ReprovisionResult>> {
+  return backendRequest<ReprovisionResult>(`/devices/${deviceId}/reprovision`, {
+    method: "POST",
+    body: JSON.stringify({ confirmation: "REPROVISION_FROM_CLOUD" }),
+    timeoutMs: 120_000,
+  });
+}
+
 export async function remoteUnlockAction(
   deviceId: number,
   payload: { door_index?: number; operator_id?: string; reason?: string } = {}

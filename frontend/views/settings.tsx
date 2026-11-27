@@ -212,7 +212,7 @@ function SettingsView() {
       {role === "superadmin" ? (
         <Panel
           title="Dashboard customization"
-          description="Choose which modules appear for every role. Overview, Stations, Access Logs, Device & Door, Settings and Users & Roles always stay visible."
+          description="Choose which modules appear for every role. Overview, Stations, Access Logs, Door & Sensor, Settings and Users & Roles always stay visible."
           action={
             <SlidersHorizontal aria-hidden className="size-4 text-muted-foreground" />
           }

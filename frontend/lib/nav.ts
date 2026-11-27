@@ -65,7 +65,7 @@ export const NAV: NavGroup[] = [
   {
     label: "Station",
     items: [
-      { title: "Device & Door", href: "/device", icon: DoorOpen, roles: ALL },
+      { title: "Door & Sensor", href: "/device", icon: DoorOpen, roles: ALL },
       { title: "Add Device", href: "/add-device", icon: Plus, roles: ADMIN },
       { title: "Alerts & Events", href: "/alerts", icon: BellRing, roles: ALL },
     ],

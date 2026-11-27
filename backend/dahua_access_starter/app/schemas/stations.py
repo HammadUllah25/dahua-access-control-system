@@ -315,4 +315,5 @@ class InventoryCheckRead(BaseModel):
     unexpected_cards: list[str]
     sync_job_id: int
     reprovision_job_id: int | None = None
+    repaired_record_numbers: list[str] = []
     note: str
